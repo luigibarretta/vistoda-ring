@@ -4,7 +4,8 @@
 
 Version `0.1.x` is a control-plane scaffold. It does not contact Ring and must
 not be deployed to Home Assistant. Running it locally proves only configuration,
-authentication and fail-closed capability behaviour.
+authentication, fail-closed capability behaviour and offline vendor request
+shapes.
 
 ## Configuration
 
@@ -17,6 +18,19 @@ authentication and fail-closed capability behaviour.
 
 The devices file contains no Ring ID or credential. Only
 `ring_intercom_audio` is accepted during the research phase.
+
+## Dedicated Ring session
+
+The research library accepts a separate JSON document with schema version 1,
+a stable UUID `hardware_id` and one refresh token. Unknown keys, including a
+password, are rejected. On Unix the file must be regular, must not be a symlink
+and must have no group or other permissions (normally mode `0600`). Reads are
+limited to 16 KiB and secret buffers are zeroed when dropped.
+
+This parser is not wired into the running service yet. No real session should
+be created or copied into the repository during Phase 1. Enrolment will be an
+explicit operator action in Phase 2 and will never scrape Home Assistant
+`.storage`.
 
 ## Safe smoke test
 

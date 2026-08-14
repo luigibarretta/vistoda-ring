@@ -11,6 +11,14 @@
   class has no `startLiveCall` or WebRTC primitive.
 - ring-mqtt explicitly reports no audio/video streaming for Intercom devices.
 - Ring has no supported public consumer API for this workflow.
+- At upstream commit `638d5285aea5f34d44d9bacbb41917f736764d49e`,
+  `ring-client-api` refreshes through the fixed Ring OAuth endpoint with the
+  Android client identity, a stable hardware UUID and a rotating refresh token.
+- The same revision registers an Android session at `clients_api/session`
+  before requesting `clients_api/ring_devices`; its API metadata version is 11.
+
+The Rust implementation currently models and tests these request shapes
+offline. It contains no network client and has not sent them to Ring.
 
 ## Current inference
 
@@ -43,4 +51,5 @@ redacted owned-device trace proves signalling and media transport.
 - <https://www.home-assistant.io/integrations/ring/>
 - <https://ring.com/gb/en/support/articles/xwk4u/Ring-Intercom-Support>
 - <https://github.com/dgreif/ring/blob/main/packages/ring-client-api/ring-intercom.ts>
+- <https://github.com/dgreif/ring/blob/638d5285aea5f34d44d9bacbb41917f736764d49e/packages/ring-client-api/rest-client.ts>
 - <https://github.com/tsightler/ring-mqtt/wiki>

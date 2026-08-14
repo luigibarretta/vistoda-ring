@@ -1,6 +1,7 @@
 /target/
 /.env
 /config/devices.json
+/config/ring-session.json
 /data/
 /secrets/
 *.log
