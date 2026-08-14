@@ -9,7 +9,7 @@ code alone; they require bounded evidence from the owned device.
 - [x] CI, dependency audit, container smoke test and 250-line file budget.
 - [x] Threat model and ADRs.
 - [x] Authenticated, fail-closed capability API.
-- [ ] Gitea repository and private GitHub push mirror.
+- [x] Gitea repository and private GitHub push mirror.
 
 Exit criterion: clean CI and no Ring session or credential dependency.
 
