@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "response": {
+    "other": [
+      {
+        "id": 1,
+        "kind": "intercom_handset_audio",
+        "description": "Synthetic Entrance Intercom"
+      },
+      {
+        "id": 2,
+        "kind": "third_party_garage_door_opener",
+        "description": "Synthetic Unrelated Device"
+      }
+    ]
+  }
+}
