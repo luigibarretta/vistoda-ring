@@ -19,4 +19,6 @@ RUN apt-get update \
 COPY --from=builder /source/target/release/ring-intercom-bridge /usr/local/bin/ring-intercom-bridge
 USER 10001:10001
 EXPOSE 8775
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["/usr/local/bin/ring-intercom-bridge", "healthcheck"]
 ENTRYPOINT ["/usr/local/bin/ring-intercom-bridge"]

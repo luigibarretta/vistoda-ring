@@ -5,7 +5,7 @@ only after protocol proof, live audio delivery to Home Assistant and SceneTrove.
 
 ## Current status
 
-The running service is deliberately **fail-closed**. Version `0.1.x` exposes an
+The running service is deliberately **fail-closed**. Version `0.2.x` exposes an
 authenticated inventory and capability API, but reports all media capabilities
 as unavailable while the Ring Intercom call protocol remains unverified. It
 does not log in to Ring, open the door, initiate calls or claim streaming
@@ -45,6 +45,9 @@ change access-control behaviour.
 | `POST /v1/enrollments` | start an explicit password/MFA enrollment | bearer |
 | `POST /v1/enrollments/{id}` | consume one SMS code and persist the session | bearer |
 | `DELETE /v1/enrollments/{id}` | idempotently discard pending secrets | bearer |
+
+The container healthcheck uses the bounded public `/healthz` endpoint and does
+not read or expose the API token or Ring session.
 
 See [`openapi.yaml`](openapi.yaml). No live endpoint exists before a real audio
 canary and contract tests prove it.

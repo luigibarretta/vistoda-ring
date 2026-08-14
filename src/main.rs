@@ -18,6 +18,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Serve,
+    Healthcheck,
     ResearchDiscover {
         #[arg(long)]
         session_file: PathBuf,
@@ -38,11 +39,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => serve().await,
+        Command::Healthcheck => healthcheck().await,
         Command::ResearchDiscover {
             session_file,
             output,
         } => research_discover(session_file, output).await,
     }
+}
+
+async fn healthcheck() -> Result<(), Box<dyn std::error::Error>> {
+    let port = std::env::var("RING_INTERCOM_BIND_PORT").unwrap_or_else(|_| "8775".into());
+    let response = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(4))
+        .build()?
+        .get(format!("http://127.0.0.1:{port}/healthz"))
+        .send()
+        .await?;
+    if !response.status().is_success() || response.content_length().unwrap_or(0) > 4096 {
+        return Err("Ring Intercom bridge health endpoint is not ready".into());
+    }
+    Ok(())
 }
 
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {

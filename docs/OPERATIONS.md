@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Version `0.1.x` remains a fail-closed media scaffold. The only service path that
+Version `0.2.x` remains a fail-closed media scaffold. The only service path that
 may contact Ring is an explicit, bearer-authenticated enrollment request. Media
 capabilities remain unavailable until their protocol gates pass.
 
