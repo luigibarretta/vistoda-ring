@@ -1,0 +1,53 @@
+[package]
+name = "ring-intercom-bridge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Luigi Barretta"]
+description = "Bounded Ring Intercom audio bridge for Home Assistant and SceneTrove"
+license = "Apache-2.0"
+repository = "https://git.luigibarretta.com/luigibarretta/ring-intercom-bridge"
+
+[lib]
+name = "ring_intercom_bridge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ring-intercom-bridge"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["json"] }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+subtle = "2.6"
+thiserror = "2"
+tokio = { version = "1.47", features = ["fs", "macros", "net", "rt-multi-thread", "signal"] }
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tempfile = "3.20"
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"

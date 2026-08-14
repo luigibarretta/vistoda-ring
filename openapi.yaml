@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: Ring Intercom Bridge
+  version: 0.1.0
+  description: >-
+    Fail-closed control-plane contract. Media endpoints are intentionally absent
+    until the Ring Intercom Audio protocol is independently verified.
+servers:
+  - url: http://127.0.0.1:8775
+paths:
+  /healthz:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: Process liveness and delivery phase
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /v1/devices:
+    get:
+      operationId: listDevices
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Alias-only device inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Device"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/devices/{device}/capabilities:
+    get:
+      operationId: getCapabilities
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]+$"
+      responses:
+        "200":
+          description: Verified media capabilities
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Capabilities"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown alias
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+  schemas:
+    Health:
+      type: object
+      required: [status, phase, version]
+      properties:
+        status:
+          const: ok
+        phase:
+          const: protocol_research
+        version:
+          type: string
+    Device:
+      type: object
+      required: [alias, kind, capabilities]
+      properties:
+        alias:
+          type: string
+        kind:
+          enum: [ring_intercom_audio]
+        capabilities:
+          $ref: "#/components/schemas/Capabilities"
+    Capabilities:
+      type: object
+      required: [available, phase]
+      properties:
+        available:
+          type: array
+          maxItems: 0
+          items:
+            enum:
+              - live_audio_receive
+              - live_audio_transmit
+              - live_video_receive
+              - recordings
+        phase:
+          const: protocol_research

@@ -1,0 +1,26 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --test loc_budget
+      - run: cargo test --locked --all-targets
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit --deny warnings
+      - run: >-
+          docker build --build-arg VERSION=0.1.0+ci --build-arg REVISION=ci
+          --tag ring-intercom-bridge:test .
+      - run: >-
+          docker run --rm --network none --read-only --user 10001:10001
+          ring-intercom-bridge:test --version

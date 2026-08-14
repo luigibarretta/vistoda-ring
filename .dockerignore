@@ -1,0 +1,6 @@
+.git
+.gitea
+target
+data
+secrets
+config/devices.json

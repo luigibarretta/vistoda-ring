@@ -1,0 +1,13 @@
+# Architecture decisions
+
+| ADR | Decision |
+| --- | --- |
+| [0001](0001-rust-product-boundary.md) | Rust production boundary |
+| [0002](0002-provider-repository-separation.md) | Separate provider repositories |
+| [0003](0003-fixture-first-protocol-research.md) | Fixture-first protocol research |
+| [0004](0004-capability-driven-media-contract.md) | Capability-driven media contract |
+| [0005](0005-session-and-access-control-boundaries.md) | Session and access-control separation |
+| [0006](0006-maintainability-and-verification.md) | LOC and verification gates |
+
+ADRs are immutable after acceptance. Superseding decisions receive a new ADR
+that links to the earlier one.
