@@ -18,6 +18,13 @@ pub enum BridgeError {
     UnsafeFixture(String),
     #[error("vendor response was rejected: {0}")]
     Protocol(String),
+    #[error("Ring rejected {operation} with HTTP {status}")]
+    VendorRejected {
+        operation: &'static str,
+        status: u16,
+    },
+    #[error("Ring transport failed during {0}")]
+    Transport(&'static str, #[source] reqwest::Error),
     #[error("I/O failed")]
     Io(#[from] std::io::Error),
     #[error("JSON is invalid")]
@@ -32,6 +39,8 @@ impl IntoResponse for BridgeError {
             Self::Configuration(_)
             | Self::UnsafeFixture(_)
             | Self::Protocol(_)
+            | Self::VendorRejected { .. }
+            | Self::Transport(_, _)
             | Self::Io(_)
             | Self::Json(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };

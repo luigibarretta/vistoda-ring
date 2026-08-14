@@ -11,7 +11,10 @@ LABEL org.opencontainers.image.title="ring-intercom-bridge" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$REVISION" \
       org.opencontainers.image.licenses="Apache-2.0"
-RUN groupadd --gid 10001 bridge \
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 bridge \
     && useradd --uid 10001 --gid bridge --no-create-home --shell /usr/sbin/nologin bridge
 COPY --from=builder /source/target/release/ring-intercom-bridge /usr/local/bin/ring-intercom-bridge
 USER 10001:10001

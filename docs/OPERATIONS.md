@@ -27,10 +27,21 @@ password, are rejected. On Unix the file must be regular, must not be a symlink
 and must have no group or other permissions (normally mode `0600`). Reads are
 limited to 16 KiB and secret buffers are zeroed when dropped.
 
-This parser is not wired into the running service yet. No real session should
-be created or copied into the repository during Phase 1. Enrolment will be an
-explicit operator action in Phase 2 and will never scrape Home Assistant
-`.storage`.
+The read-only client is not wired into the running service. Its explicit
+`research-discover` command refreshes the dedicated session, registers it,
+reads `ring_devices` once and creates a new synthetic fixture containing only
+the Intercom Audio count and synthetic identities. It refuses to overwrite an
+existing output.
+
+```bash
+ring-intercom-bridge research-discover \
+  --session-file /private/runtime/ring-session.json \
+  --output ./ring-intercom-discovery.synthetic.json
+```
+
+Do not run this command until an explicitly enrolled, revocable session exists.
+No real session belongs in the repository, and enrolment will never scrape Home
+Assistant `.storage`.
 
 ## Safe smoke test
 

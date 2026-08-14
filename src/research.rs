@@ -1,7 +1,14 @@
-use std::net::IpAddr;
+use std::{
+    fs::{File, OpenOptions},
+    io::Write,
+    net::IpAddr,
+    path::Path,
+};
 
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 use crate::error::BridgeError;
 
@@ -74,6 +81,52 @@ pub fn parse_synthetic_discovery_fixture(
         .filter(|device| device.kind == "intercom_handset_audio")
         .map(validate_intercom)
         .collect()
+}
+
+pub fn write_synthetic_discovery_fixture(
+    path: &Path,
+    intercom_count: usize,
+) -> Result<(), BridgeError> {
+    if intercom_count == 0 || intercom_count > 32 {
+        return Err(BridgeError::Protocol(
+            "expected between 1 and 32 Ring Intercom devices".into(),
+        ));
+    }
+    let devices = (1..=intercom_count)
+        .map(|id| {
+            json!({
+                "id": id,
+                "kind": "intercom_handset_audio",
+                "description": format!("Synthetic Ring Intercom Audio {id}")
+            })
+        })
+        .collect::<Vec<_>>();
+    let fixture = SyntheticFixture {
+        schema_version: 1,
+        synthetic: true,
+        response: json!({ "other": devices }),
+    };
+    let bytes = serde_json::to_vec_pretty(&fixture)?;
+    let mut file = create_new_fixture(path)?;
+    file.write_all(&bytes)?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct SyntheticFixture {
+    schema_version: u8,
+    synthetic: bool,
+    response: Value,
+}
+
+fn create_new_fixture(path: &Path) -> Result<File, BridgeError> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o640).custom_flags(libc::O_CLOEXEC);
+    options.open(path).map_err(BridgeError::Io)
 }
 
 fn validate_intercom(device: RawDevice) -> Result<DiscoveredIntercom, BridgeError> {

@@ -1,10 +1,10 @@
 use std::{
-    fs::{File, OpenOptions},
-    io::{Read, Take},
-    path::Path,
+    fs::{self, File, OpenOptions},
+    io::{Read, Take, Write},
+    path::{Path, PathBuf},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use uuid::Uuid;
@@ -21,6 +21,13 @@ struct SessionDocument {
     schema_version: u8,
     hardware_id: Uuid,
     refresh_token: Zeroizing<String>,
+}
+
+#[derive(Serialize)]
+struct SessionDocumentRef<'a> {
+    schema_version: u8,
+    hardware_id: Uuid,
+    refresh_token: &'a str,
 }
 
 pub struct RingSession {
@@ -59,6 +66,70 @@ impl RingSession {
     pub(crate) fn refresh_token(&self) -> &str {
         self.refresh_token.as_str()
     }
+
+    pub(crate) fn replace_refresh_token(
+        &mut self,
+        token: Zeroizing<String>,
+    ) -> Result<(), BridgeError> {
+        validate_token(&token)?;
+        self.refresh_token = token;
+        Ok(())
+    }
+}
+
+pub struct RingSessionStore {
+    path: PathBuf,
+}
+
+impl RingSessionStore {
+    #[must_use]
+    pub const fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    pub fn load(&self) -> Result<RingSession, BridgeError> {
+        RingSession::load(&self.path)
+    }
+
+    pub(crate) fn persist(&self, session: &RingSession) -> Result<(), BridgeError> {
+        let parent = self
+            .path
+            .parent()
+            .filter(|value| !value.as_os_str().is_empty())
+            .ok_or_else(|| configuration("session path must have a parent directory"))?;
+        let name = self
+            .path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| configuration("session filename is invalid"))?;
+        let temporary = parent.join(format!(".{name}.{}.tmp", Uuid::new_v4()));
+        let result = self.write_and_replace(session, parent, &temporary);
+        if result.is_err() {
+            let _ignored = fs::remove_file(&temporary);
+        }
+        result
+    }
+
+    fn write_and_replace(
+        &self,
+        session: &RingSession,
+        parent: &Path,
+        temporary: &Path,
+    ) -> Result<(), BridgeError> {
+        let document = SessionDocumentRef {
+            schema_version: 1,
+            hardware_id: session.hardware_id,
+            refresh_token: session.refresh_token(),
+        };
+        let bytes = Zeroizing::new(serde_json::to_vec(&document)?);
+        let mut file = create_private(temporary)?;
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(temporary, &self.path)?;
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    }
 }
 
 fn read_bounded(file: File) -> Result<Zeroizing<Vec<u8>>, BridgeError> {
@@ -78,6 +149,14 @@ fn open_restricted(path: &Path) -> Result<File, BridgeError> {
     options.read(true);
     #[cfg(unix)]
     options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
+    options.open(path).map_err(BridgeError::Io)
+}
+
+fn create_private(path: &Path) -> Result<File, BridgeError> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600).custom_flags(libc::O_CLOEXEC);
     options.open(path).map_err(BridgeError::Io)
 }
 

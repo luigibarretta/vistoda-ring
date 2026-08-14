@@ -5,11 +5,13 @@ only after protocol proof, live audio delivery to Home Assistant and SceneTrove.
 
 ## Current status
 
-The repository is deliberately **fail-closed**. Version `0.1.x` exposes an
+The running service is deliberately **fail-closed**. Version `0.1.x` exposes an
 authenticated inventory and capability API, but reports all media capabilities
 as unavailable while the Ring Intercom call protocol remains unverified. It
 does not log in to Ring, open the door, initiate calls or claim streaming
-support.
+support. An explicit research subcommand provides refresh-token-only,
+read-only device discovery and emits only a create-new synthetic fixture; it is
+not invoked by the service.
 
 The official Ring application provides two-way audio for Intercom Audio, while
 the public Home Assistant integration and the major unofficial clients expose

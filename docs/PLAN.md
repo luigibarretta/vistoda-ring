@@ -18,6 +18,8 @@ Exit criterion: clean CI and no Ring session or credential dependency.
 - [x] Pin the inspected upstream client revision and fixed request shapes.
 - [x] Parse a strict, mode-restricted dedicated session file offline.
 - [x] Model refresh and session-registration bodies without password login.
+- [x] Implement bounded read-only discovery with atomic token rotation.
+- [x] Generate only synthetic, create-new discovery evidence.
 - [ ] Inventory the exact Intercom Audio device kind through a redacted fixture.
 - [ ] Identify the official app call-signalling sequence.
 - [ ] Define a redaction format for HTTP/WebSocket message fixtures.

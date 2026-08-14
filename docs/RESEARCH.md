@@ -18,7 +18,9 @@
   before requesting `clients_api/ring_devices`; its API metadata version is 11.
 
 The Rust implementation currently models and tests these request shapes
-offline. It contains no network client and has not sent them to Ring.
+offline. It now contains an opt-in read-only client with fixed endpoints,
+bounded responses and atomic token rotation, but the running service does not
+instantiate it and no request has been sent to Ring.
 
 ## Current inference
 
