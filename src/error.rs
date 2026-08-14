@@ -14,6 +14,18 @@ pub enum BridgeError {
     Unauthorized,
     #[error("device was not found")]
     DeviceNotFound,
+    #[error("vendor credentials were rejected")]
+    InvalidCredentials,
+    #[error("verification code was rejected")]
+    InvalidOtp,
+    #[error("another enrollment is active")]
+    EnrollmentBusy,
+    #[error("enrollment expired or was already consumed")]
+    EnrollmentExpired,
+    #[error("enrollment is rate limited")]
+    RateLimited,
+    #[error("vendor enrollment is temporarily unavailable")]
+    UpstreamUnavailable,
     #[error("research fixture was rejected: {0}")]
     UnsafeFixture(String),
     #[error("vendor response was rejected: {0}")]
@@ -36,6 +48,12 @@ impl IntoResponse for BridgeError {
         let (status, code) = match self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::DeviceNotFound => (StatusCode::NOT_FOUND, "device_not_found"),
+            Self::InvalidCredentials => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_auth"),
+            Self::InvalidOtp => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_otp"),
+            Self::EnrollmentBusy => (StatusCode::CONFLICT, "enrollment_busy"),
+            Self::EnrollmentExpired => (StatusCode::GONE, "enrollment_expired"),
+            Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
+            Self::UpstreamUnavailable => (StatusCode::BAD_GATEWAY, "upstream_unavailable"),
             Self::Configuration(_)
             | Self::UnsafeFixture(_)
             | Self::Protocol(_)

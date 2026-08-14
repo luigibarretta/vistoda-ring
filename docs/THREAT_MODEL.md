@@ -21,8 +21,8 @@ owner of door unlock and ding automations.
 | --- | --- |
 | Unauthorized listening | Constant-time bearer auth, private bind/firewall and no public route |
 | Accidental door action | No unlock endpoint, command or Ring RPC dependency |
-| Credential disclosure | Files only, no debug payloads, structured redaction and synthetic fixtures |
-| Account lockout | No password login loop, no brute force, dedicated revocable session and bounded retries |
+| Credential disclosure | Ephemeral zeroizing enrollment state, session file only, no payload logs and synthetic fixtures |
+| Account lockout | One active flow, start cooldown, single-use MFA and no retry of rejected requests or 429 |
 | Vendor throttling | Single shared call, hard cooldown, explicit user start and circuit breaker |
 | Endless live call | Hard session deadline, idle cancellation and server-side teardown proof |
 | Audio memory exhaustion | Bounded jitter/consumer queues and slow-client eviction |

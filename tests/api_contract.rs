@@ -24,7 +24,9 @@ fn app() -> axum::Router {
     )]);
     let config = BridgeConfig::new("127.0.0.1".into(), 8775, TOKEN.into(), devices)
         .unwrap_or_else(|error| panic!("test configuration failed: {error}"));
-    router(Arc::new(Runtime::new(config)))
+    router(Arc::new(Runtime::new(config).unwrap_or_else(|error| {
+        panic!("runtime setup failed: {error}")
+    })))
 }
 
 async fn json(response: axum::response::Response) -> Value {
@@ -93,4 +95,32 @@ async fn unknown_device_is_not_disclosed() {
         .await
         .unwrap_or_else(|error| panic!("router failed: {error}"));
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn enrollment_requires_bridge_authentication() {
+    let request = Request::post("/v1/enrollments")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"email":"owner@example.com","password":"secret"}"#,
+        ))
+        .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(request)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn enrollment_cancellation_is_idempotent() {
+    let request = Request::delete("/v1/enrollments/not-a-valid-id")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .body(Body::empty())
+        .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(request)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
 }

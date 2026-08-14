@@ -36,6 +36,16 @@ pub struct RingSession {
 }
 
 impl RingSession {
+    pub(crate) fn enrolled(
+        hardware_id: Uuid,
+        refresh_token: Zeroizing<String>,
+    ) -> Result<Self, BridgeError> {
+        validate_token(&refresh_token)?;
+        Ok(Self {
+            hardware_id,
+            refresh_token,
+        })
+    }
     pub fn load(path: &Path) -> Result<Self, BridgeError> {
         let file = open_restricted(path)?;
         validate_permissions(&file)?;

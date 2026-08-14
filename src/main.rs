@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let config = BridgeConfig::from_env().await?;
     let address = config.socket_address()?;
-    let runtime = Arc::new(Runtime::new(config));
+    let runtime = Arc::new(Runtime::new(config)?);
     let listener = TcpListener::bind(address).await?;
     tracing::info!(%address, "Ring Intercom bridge control plane listening");
     axum::serve(listener, router(runtime))

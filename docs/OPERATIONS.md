@@ -2,10 +2,9 @@
 
 ## Current phase
 
-Version `0.1.x` is a control-plane scaffold. It does not contact Ring and must
-not be deployed to Home Assistant. Running it locally proves only configuration,
-authentication, fail-closed capability behaviour and offline vendor request
-shapes.
+Version `0.1.x` remains a fail-closed media scaffold. The only service path that
+may contact Ring is an explicit, bearer-authenticated enrollment request. Media
+capabilities remain unavailable until their protocol gates pass.
 
 ## Configuration
 
@@ -15,6 +14,7 @@ shapes.
 | `RING_INTERCOM_BIND_PORT` | `8775` | listener port |
 | `RING_INTERCOM_API_TOKEN_FILE` | `/run/secrets/api_token` | bearer token file, at least 32 bytes |
 | `RING_INTERCOM_DEVICES_FILE` | `/config/devices.json` | alias-only device kinds |
+| `RING_INTERCOM_SESSION_FILE` | `/data/ring-session.json` | dedicated rotating session |
 
 The devices file contains no Ring ID or credential. Only
 `ring_intercom_audio` is accepted during the research phase.
@@ -40,8 +40,20 @@ ring-intercom-bridge research-discover \
 ```
 
 Do not run this command until an explicitly enrolled, revocable session exists.
-No real session belongs in the repository, and enrolment will never scrape Home
+No real session belongs in the repository, and enrollment never scrapes Home
 Assistant `.storage`.
+
+## Home Assistant enrollment
+
+The intended operator path is the native Home Assistant Config Flow. HA sends
+the password once to `POST /v1/enrollments`, prompts for the SMS code only when
+the bridge returns `next_step=otp`, then calls the single-use verification
+endpoint. HA persists only bridge address, bridge API token and device alias.
+
+Pending password state expires after 120 seconds. Only one enrollment may be
+active, starts have a ten-second cooldown, cancellation is idempotent and a
+verification attempt consumes its challenge whether it succeeds or fails. The
+bridge never retries rejected credentials, MFA or HTTP 429 responses.
 
 ## Safe smoke test
 
@@ -59,7 +71,9 @@ Assistant `.storage`.
 - unsupported device kind: startup fails;
 - invalid bearer: `401` with no detail;
 - unknown alias: `404`;
-- Ring/network outage: impossible in this phase because no provider exists.
+- Ring/network outage during enrollment: stable `502` without vendor detail;
+- rejected credentials/code: stable `422`, with no automatic retry;
+- expired/consumed challenge: `410`; concurrent flow: `409`; throttling: `429`.
 
-No retry, capture or credential enrolment procedure is documented before the
-corresponding protocol phase passes review.
+No capture procedure is documented before the corresponding media protocol
+phase passes review.

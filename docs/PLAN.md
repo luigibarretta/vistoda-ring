@@ -30,7 +30,8 @@ call start, keepalive and call termination without containing secrets.
 
 ## Phase 2 — receive-only canary
 
-- [ ] Enrol one dedicated, revocable Ring session.
+- [x] Implement bounded UI enrollment for one dedicated, revocable session.
+- [ ] Complete one owner-driven live enrollment through Home Assistant.
 - [ ] Start one operator-triggered call with a 30-second hard limit.
 - [ ] Receive authenticated RTP audio and verify codec/timestamps.
 - [ ] Stop and prove all tasks, sockets and keepalives terminate.

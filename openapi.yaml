@@ -38,6 +38,74 @@ paths:
                       $ref: "#/components/schemas/Device"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /v1/enrollments:
+    post:
+      operationId: startEnrollment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnrollmentStart"
+      responses:
+        "200":
+          description: MFA challenge started or session completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnrollmentStarted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Another enrollment is active
+        "422":
+          description: Vendor credentials were rejected
+        "429":
+          description: Local or vendor rate limit
+        "502":
+          description: Vendor enrollment is unavailable
+  /v1/enrollments/{enrollment}:
+    parameters:
+      - name: enrollment
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: verifyEnrollment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnrollmentVerify"
+      responses:
+        "200":
+          description: Dedicated session persisted by the bridge
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          description: Challenge expired or was already consumed
+        "422":
+          description: Verification code was rejected
+        "429":
+          description: Vendor rate limit
+        "502":
+          description: Vendor enrollment is unavailable
+    delete:
+      operationId: cancelEnrollment
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Challenge absent or securely discarded
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /v1/devices/{device}/capabilities:
     get:
       operationId: getCapabilities
@@ -70,6 +138,41 @@ components:
     Unauthorized:
       description: Missing or invalid bearer token
   schemas:
+    EnrollmentStart:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          maxLength: 1024
+    EnrollmentStarted:
+      type: object
+      required: [enrollment_id, next_step, expires_in]
+      properties:
+        enrollment_id:
+          type: string
+          format: uuid
+        next_step:
+          enum: [otp, complete]
+        expires_in:
+          type: integer
+          minimum: 0
+          maximum: 120
+    EnrollmentVerify:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          format: password
+          pattern: "^[0-9]{6}$"
     Health:
       type: object
       required: [status, phase, version]

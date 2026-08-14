@@ -11,6 +11,7 @@ pub struct BridgeConfig {
     pub bind_port: u16,
     pub api_token: Vec<u8>,
     pub devices: BTreeMap<String, DeviceConfig>,
+    pub session_file: PathBuf,
 }
 
 impl BridgeConfig {
@@ -25,6 +26,12 @@ impl BridgeConfig {
             token,
             serde_json::from_str(&devices)?,
         )
+        .map(|config| {
+            config.with_session_file(path(
+                "RING_INTERCOM_SESSION_FILE",
+                "/data/ring-session.json",
+            ))
+        })
     }
 
     pub fn new(
@@ -45,7 +52,14 @@ impl BridgeConfig {
             bind_port,
             api_token,
             devices,
+            session_file: PathBuf::from("/data/ring-session.json"),
         })
+    }
+
+    #[must_use]
+    pub fn with_session_file(mut self, path: PathBuf) -> Self {
+        self.session_file = path;
+        self
     }
 
     pub fn socket_address(&self) -> Result<SocketAddr, BridgeError> {
