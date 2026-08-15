@@ -54,6 +54,18 @@ impl MediaCapabilities {
             phase: CapabilityPhase::Verified,
         }
     }
+
+    #[must_use]
+    pub fn verified_audio_recordings() -> Self {
+        Self {
+            available: vec![
+                MediaCapability::LiveAudioReceive,
+                MediaCapability::LiveAudioTransmit,
+                MediaCapability::Recordings,
+            ],
+            phase: CapabilityPhase::Verified,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

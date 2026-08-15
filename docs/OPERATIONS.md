@@ -14,6 +14,7 @@ Calls remain on demand, authenticated, single-device and limited to 120 seconds.
 | `RING_INTERCOM_API_TOKEN_FILE` | `/run/secrets/api_token` | bearer token file, at least 32 bytes |
 | `RING_INTERCOM_DEVICES_FILE` | `/config/devices.json` | alias-only device kinds |
 | `RING_INTERCOM_SESSION_FILE` | `/data/ring-session.json` | dedicated rotating session |
+| `RING_INTERCOM_RECORDING_DIR` | `/data/recordings` | private bounded call archive |
 
 The devices file contains no Ring ID or credential. Only
 `ring_intercom_audio` is accepted during the research phase.
@@ -99,6 +100,19 @@ bridge never retries rejected credentials, MFA or HTTP 429 responses.
 6. Submit only a fully gathered audio-only PCMU offer through Vistoda or an
    approved backend, then always send the idempotent session `DELETE`.
 
+## Call recording archive
+
+Enable Call Recording in Ring app → Device Settings → Privacy Settings before
+enabling the Home Assistant ding automation. The bridge does not change this
+provider setting. A ding import returns immediately and may remain pending for
+up to three minutes while Ring finishes an answered call. Missed calls and
+ineligible accounts produce no local media.
+
+Keep `/data` on private persistent storage owned by UID/GID 10001. Recording
+files are mode `0600`; the recording directory is `0700`. The bridge removes
+items older than 30 days and then the oldest items whenever the archive exceeds
+512 MiB. A successful consumer commit must be followed by idempotent `DELETE`.
+
 ## Failure behaviour
 
 - missing/short token: startup fails;
@@ -109,5 +123,7 @@ bridge never retries rejected credentials, MFA or HTTP 429 responses.
 - Ring/network outage during enrollment or session start: stable `502`;
 - rejected credentials/code: stable `422`, with no automatic retry;
 - expired/consumed challenge: `410`; concurrent flow: `409`; throttling: `429`.
+- disabled/unavailable provider recording: import state `unavailable`;
+- unanswered or unfinalized call: import state `expired` and no file.
 
 Audio sessions accept one peer per alias and never authorize door actions.

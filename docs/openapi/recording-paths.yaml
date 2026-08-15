@@ -1,0 +1,76 @@
+RecordingImports:
+  post:
+    operationId: importRecording
+    security: [{bearerAuth: []}]
+    parameters:
+      - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "./schemas.yaml#/RecordingImportRequest"
+    responses:
+      "202":
+        description: Idempotent post-ding import queued
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas.yaml#/RecordingImport"
+      "400": {description: Trigger timestamp is outside the one-hour window}
+      "401":
+        $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+      "409": {description: Another non-duplicate import is active}
+RecordingImportStatus:
+  get:
+    operationId: getRecordingImport
+    security: [{bearerAuth: []}]
+    parameters:
+      - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+      - name: import
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    responses:
+      "200":
+        description: Current asynchronous import state
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas.yaml#/RecordingImport"
+      "404": {description: Import is absent}
+Recordings:
+  get:
+    operationId: listRecordings
+    security: [{bearerAuth: []}]
+    parameters:
+      - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+    responses:
+      "200":
+        description: Private retained recording metadata
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas.yaml#/RecordingList"
+Recording:
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+    - name: recording
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  get:
+    operationId: getRecording
+    security: [{bearerAuth: []}]
+    responses:
+      "200":
+        description: Bounded official Ring MP4 recording
+        content:
+          audio/mp4:
+            schema: {type: string, format: binary}
+      "404": {description: Recording is absent}
+  delete:
+    operationId: deleteRecording
+    security: [{bearerAuth: []}]
+    responses:
+      "204": {description: Recording removed or already absent}

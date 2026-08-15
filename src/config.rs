@@ -12,6 +12,7 @@ pub struct BridgeConfig {
     pub api_token: Vec<u8>,
     pub devices: BTreeMap<String, DeviceConfig>,
     pub session_file: PathBuf,
+    pub recording_dir: PathBuf,
 }
 
 impl BridgeConfig {
@@ -27,10 +28,12 @@ impl BridgeConfig {
             serde_json::from_str(&devices)?,
         )
         .map(|config| {
-            config.with_session_file(path(
-                "RING_INTERCOM_SESSION_FILE",
-                "/data/ring-session.json",
-            ))
+            config
+                .with_session_file(path(
+                    "RING_INTERCOM_SESSION_FILE",
+                    "/data/ring-session.json",
+                ))
+                .with_recording_dir(path("RING_INTERCOM_RECORDING_DIR", "/data/recordings"))
         })
     }
 
@@ -53,12 +56,19 @@ impl BridgeConfig {
             api_token,
             devices,
             session_file: PathBuf::from("/data/ring-session.json"),
+            recording_dir: PathBuf::from("/data/recordings"),
         })
     }
 
     #[must_use]
     pub fn with_session_file(mut self, path: PathBuf) -> Self {
         self.session_file = path;
+        self
+    }
+
+    #[must_use]
+    pub fn with_recording_dir(mut self, path: PathBuf) -> Self {
+        self.recording_dir = path;
         self
     }
 

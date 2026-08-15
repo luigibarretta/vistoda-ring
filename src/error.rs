@@ -32,6 +32,10 @@ pub enum BridgeError {
     UpstreamUnavailable,
     #[error("Ring call recording is not enabled or available")]
     RecordingUnavailable,
+    #[error("recording was not found")]
+    RecordingNotFound,
+    #[error("another Ring recording import is active")]
+    RecordingBusy,
     #[error("research fixture was rejected: {0}")]
     UnsafeFixture(String),
     #[error("vendor response was rejected: {0}")]
@@ -65,6 +69,8 @@ impl IntoResponse for BridgeError {
             Self::RecordingUnavailable => {
                 (StatusCode::UNPROCESSABLE_ENTITY, "recording_unavailable")
             }
+            Self::RecordingNotFound => (StatusCode::NOT_FOUND, "recording_not_found"),
+            Self::RecordingBusy => (StatusCode::CONFLICT, "recording_busy"),
             Self::Configuration(_)
             | Self::UnsafeFixture(_)
             | Self::Protocol(_)

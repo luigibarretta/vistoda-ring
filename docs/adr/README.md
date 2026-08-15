@@ -12,6 +12,7 @@
 | [0008](0008-home-assistant-enrollment.md) | Native HA enrollment boundary |
 | [0009](0009-ring-signalsocket-audio.md) | Proven Ring signalsocket audio protocol |
 | [0010](0010-consumer-webrtc-sessions.md) | Private consumer WebRTC session boundary |
+| [0011](0011-official-call-recording-import.md) | Official post-ding call recording import |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.

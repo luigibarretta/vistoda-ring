@@ -83,7 +83,7 @@ async fn verified_audio_capabilities_are_explicit() {
     assert_eq!(body["phase"], "verified");
     assert_eq!(
         body["available"],
-        serde_json::json!(["live_audio_receive", "live_audio_transmit"])
+        serde_json::json!(["live_audio_receive", "live_audio_transmit", "recordings"])
     );
 }
 
@@ -169,4 +169,59 @@ async fn audio_session_delete_is_idempotent() {
         .await
         .unwrap_or_else(|error| panic!("router failed: {error}"));
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn recording_inventory_is_private_and_empty_by_default() {
+    let unauthenticated = app()
+        .oneshot(
+            Request::get("/v1/devices/entrance/recordings")
+                .body(Body::empty())
+                .unwrap_or_else(|error| panic!("request failed: {error}")),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+    let authenticated = app()
+        .oneshot(
+            Request::get("/v1/devices/entrance/recordings")
+                .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+                .body(Body::empty())
+                .unwrap_or_else(|error| panic!("request failed: {error}")),
+        )
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(authenticated.status(), StatusCode::OK);
+    assert_eq!(
+        json(authenticated).await["recordings"],
+        serde_json::json!([])
+    );
+}
+
+#[tokio::test]
+async fn recording_delete_is_idempotent() {
+    let request =
+        Request::delete("/v1/devices/entrance/recordings/00000000-0000-0000-0000-000000000000")
+            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+            .body(Body::empty())
+            .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(request)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn recording_import_rejects_stale_triggers_before_vendor_access() {
+    let request = Request::post("/v1/devices/entrance/recording-imports")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"triggered_at":1}"#))
+        .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(request)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

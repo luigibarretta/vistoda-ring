@@ -20,22 +20,27 @@ use crate::{
         EnrollmentStart, EnrollmentStarted, EnrollmentVerified, RingEnrollmentManager,
         VerifyEnrollment,
     },
+    ring_recording_manager::RingRecordings,
 };
 
 pub struct Runtime {
     pub config: BridgeConfig,
     enrollment: RingEnrollmentManager,
     audio: RingAudioSessions,
+    pub(crate) recordings: Arc<RingRecordings>,
 }
 
 impl Runtime {
     pub fn new(config: BridgeConfig) -> Result<Self, BridgeError> {
         let enrollment = RingEnrollmentManager::production(config.session_file.clone())?;
         let audio = RingAudioSessions::production(config.session_file.clone());
+        let recordings =
+            RingRecordings::production(config.session_file.clone(), config.recording_dir.clone())?;
         Ok(Self {
             config,
             enrollment,
             audio,
+            recordings,
         })
     }
 }
@@ -70,6 +75,7 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
             "/v1/devices/{device}/audio/sessions/{session}",
             delete(delete_audio_session),
         )
+        .merge(crate::ring_recording_api::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(runtime)
 }
@@ -123,7 +129,7 @@ async fn devices(
         .map(|(alias, device)| DeviceSummary {
             alias: alias.clone(),
             kind: device.kind,
-            capabilities: MediaCapabilities::verified_audio(),
+            capabilities: MediaCapabilities::verified_audio_recordings(),
         })
         .collect();
     Ok(Json(DeviceList { devices }))
@@ -138,7 +144,7 @@ async fn capabilities(
     if !runtime.config.devices.contains_key(&device) {
         return Err(BridgeError::DeviceNotFound);
     }
-    Ok(Json(MediaCapabilities::verified_audio()))
+    Ok(Json(MediaCapabilities::verified_audio_recordings()))
 }
 
 async fn start_audio_session(
