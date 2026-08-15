@@ -1,22 +1,20 @@
 # Ring Intercom Bridge
 
-Production-oriented Rust boundary for bounded Ring Intercom Audio research and,
-only after protocol proof, live audio delivery to Home Assistant and SceneTrove.
+Production Rust boundary for bounded Ring Intercom Audio delivery to Home
+Assistant and SceneTrove.
 
 ## Current status
 
-The running service is deliberately **fail-closed**. Version `0.2.x` exposes an
-authenticated inventory and capability API, but reports all media capabilities
-as unavailable while consumer session contracts remain unfinished. It does not
-open the door, initiate calls from its HTTP service or claim streaming support.
+Version `0.3.x` exposes a bounded, authenticated WebRTC signaling API after the
+owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
+does not open the door, record audio or expose a public listener.
 An authenticated, rate-limited enrollment API can create the dedicated
 session through Ring's normal password and SMS-MFA flow; retained pending
 password state is zeroizing and credentials are never written to configuration.
-Explicit research subcommands provide refresh-token-only discovery and a
-bounded audio canary; neither is invoked by the service. The owned audio-only
-Intercom has now completed repeated real bidirectional WebRTC/PCMU canaries
-with inbound RTP, outbound silence and complete teardown. Consumer media
-endpoints remain closed until their lifecycle and contract gates pass.
+Explicit research subcommands still provide refresh-token-only discovery and a
+bounded audio canary; neither is invoked by the service. HTTP sessions accept
+one fully gathered, audio-only PCMU offer, keep signaling alive for at most two
+minutes and close idempotently. The consumer peer carries media directly.
 
 The official Ring application provides two-way audio for Intercom Audio, while
 the public Home Assistant integration and the major unofficial clients expose
@@ -43,16 +41,18 @@ change access-control behaviour.
 | --- | --- | --- |
 | `GET /healthz` | liveness, version and research phase | none |
 | `GET /v1/devices` | alias-only inventory and capabilities | bearer |
-| `GET /v1/devices/{alias}/capabilities` | fail-closed media capability set | bearer |
+| `GET /v1/devices/{alias}/capabilities` | verified media capability set | bearer |
 | `POST /v1/enrollments` | start an explicit password/MFA enrollment | bearer |
 | `POST /v1/enrollments/{id}` | consume one SMS code and persist the session | bearer |
 | `DELETE /v1/enrollments/{id}` | idempotently discard pending secrets | bearer |
+| `POST /v1/devices/{alias}/audio/sessions` | negotiate bounded WebRTC audio | bearer |
+| `DELETE /v1/devices/{alias}/audio/sessions/{id}` | idempotently end audio | bearer |
 
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.
 
-See [`openapi.yaml`](openapi.yaml). No live HTTP endpoint exists until repeated
-canaries and consumer session contract tests pass.
+See [`openapi.yaml`](openapi.yaml). Browsers must use an authenticated backend
+proxy; they never receive the bridge token.
 
 ## Development
 

@@ -2,8 +2,8 @@
 
 ## Current phase
 
-The HTTP service remains fail-closed. Enrollment is its only Ring network path;
-discovery and audio canaries are explicit CLI commands and are never scheduled.
+The HTTP service advertises verified audio after repeated owned-device canaries.
+Calls remain on demand, authenticated, single-device and limited to 120 seconds.
 
 ## Configuration
 
@@ -26,7 +26,7 @@ password, are rejected. On Unix the file must be regular, must not be a symlink
 and must have no group or other permissions (normally mode `0600`). Reads are
 limited to 16 KiB and secret buffers are zeroed when dropped.
 
-The read-only client is not wired into the running service. Its explicit
+The same bounded client supplies on-demand HTTP audio sessions. Its explicit
 `research-discover` command refreshes the dedicated session, registers it,
 reads `ring_devices` once and creates a new synthetic fixture containing only
 the Intercom Audio count and synthetic identities. It refuses to overwrite an
@@ -83,8 +83,10 @@ bridge never retries rejected credentials, MFA or HTTP 429 responses.
 2. Copy `deploy/devices.example.json` to a non-repository runtime directory.
 3. Bind to loopback.
 4. Query `/healthz` without authentication.
-5. Query `/v1/devices` with the bearer token and require `available` to be empty
-   and `phase` to be `protocol_research`.
+5. Query `/v1/devices` with the bearer token and require both audio capabilities
+   and `phase=verified`.
+6. Submit only a fully gathered audio-only PCMU offer through Vistoda or an
+   approved backend, then always send the idempotent session `DELETE`.
 
 ## Failure behaviour
 
@@ -93,9 +95,8 @@ bridge never retries rejected credentials, MFA or HTTP 429 responses.
 - unsupported device kind: startup fails;
 - invalid bearer: `401` with no detail;
 - unknown alias: `404`;
-- Ring/network outage during enrollment: stable `502` without vendor detail;
+- Ring/network outage during enrollment or session start: stable `502`;
 - rejected credentials/code: stable `422`, with no automatic retry;
 - expired/consumed challenge: `410`; concurrent flow: `409`; throttling: `429`.
 
-No capture procedure is documented before the corresponding media protocol
-phase passes review.
+Audio sessions accept one peer per alias and never authorize door actions.

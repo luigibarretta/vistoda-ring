@@ -1,0 +1,123 @@
+EnrollmentStart:
+  type: object
+  additionalProperties: false
+  required: [email, password]
+  properties:
+    email:
+      type: string
+      format: email
+      maxLength: 254
+    password:
+      type: string
+      format: password
+      maxLength: 1024
+EnrollmentStarted:
+  type: object
+  additionalProperties: false
+  required: [enrollment_id, next_step, expires_in]
+  properties:
+    enrollment_id:
+      type: string
+      format: uuid
+    next_step:
+      enum: [otp, complete]
+    expires_in:
+      type: integer
+      minimum: 0
+      maximum: 120
+EnrollmentVerify:
+  type: object
+  additionalProperties: false
+  required: [code]
+  properties:
+    code:
+      type: string
+      format: password
+      pattern: "^[0-9]{6}$"
+Health:
+  type: object
+  additionalProperties: false
+  required: [status, phase, version]
+  properties:
+    status:
+      const: ok
+    phase:
+      const: verified
+    version:
+      type: string
+Device:
+  type: object
+  additionalProperties: false
+  required: [alias, kind, capabilities]
+  properties:
+    alias:
+      type: string
+    kind:
+      enum: [ring_intercom_audio]
+    capabilities:
+      $ref: "#/Capabilities"
+Capabilities:
+  type: object
+  additionalProperties: false
+  required: [available, phase]
+  properties:
+    available:
+      type: array
+      uniqueItems: true
+      items:
+        enum:
+          - live_audio_receive
+          - live_audio_transmit
+          - live_video_receive
+          - recordings
+    phase:
+      const: verified
+AudioSessionRequest:
+  type: object
+  additionalProperties: false
+  required: [offer_sdp, mode]
+  properties:
+    offer_sdp:
+      type: string
+      minLength: 1
+      maxLength: 65536
+      description: Fully gathered audio-only sendrecv offer with PCMU payload 0.
+    mode:
+      enum: [listen, talk]
+      description: Consumer intent; listen sends a locally generated silent track.
+IceCandidate:
+  type: object
+  additionalProperties: false
+  required: [candidate, sdp_mline_index]
+  properties:
+    candidate:
+      type: string
+      minLength: 1
+      maxLength: 4096
+    sdp_mline_index:
+      type: integer
+      minimum: 0
+      maximum: 16
+AudioSession:
+  type: object
+  additionalProperties: false
+  required: [session_id, answer_sdp, ice_candidates, mode, expires_in]
+  properties:
+    session_id:
+      type: string
+      format: uuid
+    answer_sdp:
+      type: string
+      minLength: 1
+      maxLength: 65536
+    ice_candidates:
+      type: array
+      maxItems: 64
+      items:
+        $ref: "#/IceCandidate"
+    mode:
+      enum: [listen, talk]
+    expires_in:
+      type: integer
+      minimum: 1
+      maximum: 120

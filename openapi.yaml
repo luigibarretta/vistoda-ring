@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.1.0
+  version: 0.3.0
   description: >-
-    Fail-closed control-plane contract. Media endpoints are intentionally absent
-    until the Ring Intercom Audio protocol is independently verified.
+    Private control-plane and bounded WebRTC signaling contract for Ring
+    Intercom Audio. The bridge never exposes vendor or bridge credentials.
 servers:
   - url: http://127.0.0.1:8775
 paths:
@@ -129,6 +129,58 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Unknown alias
+  /v1/devices/{device}/audio/sessions:
+    post:
+      operationId: createAudioSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceAlias"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AudioSessionRequest"
+      responses:
+        "201":
+          description: Bounded browser-to-Ring WebRTC session negotiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioSession"
+        "400":
+          description: Offer violates the audio-only PCMU contract
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown alias
+        "409":
+          description: This device already owns an active session
+        "429":
+          description: Per-device post-session cooldown
+        "502":
+          description: Ring signaling is unavailable
+  /v1/devices/{device}/audio/sessions/{session}:
+    delete:
+      operationId: deleteAudioSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceAlias"
+        - name: session
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Session closed or already absent
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Unknown alias
 components:
   securitySchemes:
     bearerAuth:
@@ -137,74 +189,28 @@ components:
   responses:
     Unauthorized:
       description: Missing or invalid bearer token
+  parameters:
+    DeviceAlias:
+      name: device
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]+$"
   schemas:
     EnrollmentStart:
-      type: object
-      additionalProperties: false
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-          maxLength: 254
-        password:
-          type: string
-          format: password
-          maxLength: 1024
+      $ref: "./docs/openapi/schemas.yaml#/EnrollmentStart"
     EnrollmentStarted:
-      type: object
-      required: [enrollment_id, next_step, expires_in]
-      properties:
-        enrollment_id:
-          type: string
-          format: uuid
-        next_step:
-          enum: [otp, complete]
-        expires_in:
-          type: integer
-          minimum: 0
-          maximum: 120
+      $ref: "./docs/openapi/schemas.yaml#/EnrollmentStarted"
     EnrollmentVerify:
-      type: object
-      additionalProperties: false
-      required: [code]
-      properties:
-        code:
-          type: string
-          format: password
-          pattern: "^[0-9]{6}$"
+      $ref: "./docs/openapi/schemas.yaml#/EnrollmentVerify"
     Health:
-      type: object
-      required: [status, phase, version]
-      properties:
-        status:
-          const: ok
-        phase:
-          const: protocol_research
-        version:
-          type: string
+      $ref: "./docs/openapi/schemas.yaml#/Health"
     Device:
-      type: object
-      required: [alias, kind, capabilities]
-      properties:
-        alias:
-          type: string
-        kind:
-          enum: [ring_intercom_audio]
-        capabilities:
-          $ref: "#/components/schemas/Capabilities"
+      $ref: "./docs/openapi/schemas.yaml#/Device"
     Capabilities:
-      type: object
-      required: [available, phase]
-      properties:
-        available:
-          type: array
-          maxItems: 0
-          items:
-            enum:
-              - live_audio_receive
-              - live_audio_transmit
-              - live_video_receive
-              - recordings
-        phase:
-          const: protocol_research
+      $ref: "./docs/openapi/schemas.yaml#/Capabilities"
+    AudioSessionRequest:
+      $ref: "./docs/openapi/schemas.yaml#/AudioSessionRequest"
+    AudioSession:
+      $ref: "./docs/openapi/schemas.yaml#/AudioSession"

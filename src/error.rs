@@ -14,6 +14,10 @@ pub enum BridgeError {
     Unauthorized,
     #[error("device was not found")]
     DeviceNotFound,
+    #[error("request is invalid: {0}")]
+    InvalidRequest(String),
+    #[error("an audio session is already active for this device")]
+    SessionBusy,
     #[error("vendor credentials were rejected")]
     InvalidCredentials,
     #[error("verification code was rejected")]
@@ -22,7 +26,7 @@ pub enum BridgeError {
     EnrollmentBusy,
     #[error("enrollment expired or was already consumed")]
     EnrollmentExpired,
-    #[error("enrollment is rate limited")]
+    #[error("request is rate limited")]
     RateLimited,
     #[error("vendor enrollment is temporarily unavailable")]
     UpstreamUnavailable,
@@ -48,6 +52,8 @@ impl IntoResponse for BridgeError {
         let (status, code) = match self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::DeviceNotFound => (StatusCode::NOT_FOUND, "device_not_found"),
+            Self::InvalidRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request"),
+            Self::SessionBusy => (StatusCode::CONFLICT, "session_busy"),
             Self::InvalidCredentials => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_auth"),
             Self::InvalidOtp => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_otp"),
             Self::EnrollmentBusy => (StatusCode::CONFLICT, "enrollment_busy"),

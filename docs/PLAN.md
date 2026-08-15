@@ -43,7 +43,7 @@ door action and no residual live session.
 ## Phase 3 — full-duplex audio
 
 - [x] Negotiate the microphone return direction and send bounded silence.
-- [ ] Send real microphone audio only through an explicit consumer action.
+- [x] Gate real microphone audio behind an explicit consumer action.
 - [ ] Add echo-safe codec and jitter handling without unbounded buffering.
 - [ ] Prove mute, disconnect and deadline behaviour.
 
@@ -51,9 +51,9 @@ Exit criterion: full-duplex canary with packet, memory and lifetime bounds.
 
 ## Phase 4 — consumers
 
-- [ ] WebRTC session API and Home Assistant card.
-- [ ] Receive-only Opus/AAC stream for SceneTrove.
-- [ ] Capability-driven clients; no provider-specific assumptions.
+- [x] WebRTC session API and Home Assistant panel contract.
+- [x] Receive-only WebRTC contract for SceneTrove.
+- [x] Capability-driven clients; no provider-specific browser assumptions.
 
 Exit criterion: both consumers pass contract tests while Ring credentials remain
 inside the bridge trust boundary.
@@ -62,7 +62,7 @@ inside the bridge trust boundary.
 
 - [ ] Immutable OCI image, digest-pinned Ansible deployment and rollback.
 - [ ] Metrics, alerts, canary separation and redacted structured logs.
-- [ ] Rate limits, one-call fanout and account-throttling protection.
+- [x] One-call exclusivity, post-call cooldown and account-throttling protection.
 - [ ] Operations documentation and recovery drill.
 
 No Home Assistant deployment or restart occurs before Phase 4.

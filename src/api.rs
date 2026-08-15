@@ -4,7 +4,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use serde::Serialize;
 use tower_http::trace::TraceLayer;
@@ -14,6 +14,8 @@ use crate::{
     config::BridgeConfig,
     error::BridgeError,
     model::{DeviceSummary, MediaCapabilities},
+    ring_audio::{AudioSessionCreated, AudioSessionRequest},
+    ring_audio_manager::RingAudioSessions,
     ring_enrollment::{
         EnrollmentStart, EnrollmentStarted, EnrollmentVerified, RingEnrollmentManager,
         VerifyEnrollment,
@@ -23,12 +25,18 @@ use crate::{
 pub struct Runtime {
     pub config: BridgeConfig,
     enrollment: RingEnrollmentManager,
+    audio: RingAudioSessions,
 }
 
 impl Runtime {
     pub fn new(config: BridgeConfig) -> Result<Self, BridgeError> {
         let enrollment = RingEnrollmentManager::production(config.session_file.clone())?;
-        Ok(Self { config, enrollment })
+        let audio = RingAudioSessions::production(config.session_file.clone());
+        Ok(Self {
+            config,
+            enrollment,
+            audio,
+        })
     }
 }
 
@@ -54,6 +62,14 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
             post(verify_enrollment).delete(cancel_enrollment),
         )
         .route("/v1/devices/{device}/capabilities", get(capabilities))
+        .route(
+            "/v1/devices/{device}/audio/sessions",
+            post(start_audio_session),
+        )
+        .route(
+            "/v1/devices/{device}/audio/sessions/{session}",
+            delete(delete_audio_session),
+        )
         .layer(TraceLayer::new_for_http())
         .with_state(runtime)
 }
@@ -90,7 +106,7 @@ async fn cancel_enrollment(
 async fn health() -> Json<Health<'static>> {
     Json(Health {
         status: "ok",
-        phase: "protocol_research",
+        phase: "verified",
         version: env!("CARGO_PKG_VERSION"),
     })
 }
@@ -107,7 +123,7 @@ async fn devices(
         .map(|(alias, device)| DeviceSummary {
             alias: alias.clone(),
             kind: device.kind,
-            capabilities: MediaCapabilities::research_only(),
+            capabilities: MediaCapabilities::verified_audio(),
         })
         .collect();
     Ok(Json(DeviceList { devices }))
@@ -122,5 +138,34 @@ async fn capabilities(
     if !runtime.config.devices.contains_key(&device) {
         return Err(BridgeError::DeviceNotFound);
     }
-    Ok(Json(MediaCapabilities::research_only()))
+    Ok(Json(MediaCapabilities::verified_audio()))
+}
+
+async fn start_audio_session(
+    State(runtime): State<Arc<Runtime>>,
+    Path(device): Path<String>,
+    headers: HeaderMap,
+    Json(input): Json<AudioSessionRequest>,
+) -> Result<(StatusCode, Json<AudioSessionCreated>), BridgeError> {
+    require_bearer(&headers, &runtime.config.api_token)?;
+    if !runtime.config.devices.contains_key(&device) {
+        return Err(BridgeError::DeviceNotFound);
+    }
+    let session = runtime.audio.start(device, input).await?;
+    Ok((StatusCode::CREATED, Json(session)))
+}
+
+async fn delete_audio_session(
+    State(runtime): State<Arc<Runtime>>,
+    Path((device, session)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<StatusCode, BridgeError> {
+    require_bearer(&headers, &runtime.config.api_token)?;
+    if !runtime.config.devices.contains_key(&device) {
+        return Err(BridgeError::DeviceNotFound);
+    }
+    if let Ok(id) = uuid::Uuid::parse_str(&session) {
+        runtime.audio.delete(id).await;
+    }
+    Ok(StatusCode::NO_CONTENT)
 }

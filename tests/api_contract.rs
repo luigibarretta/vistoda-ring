@@ -40,7 +40,7 @@ async fn json(response: axum::response::Response) -> Value {
 }
 
 #[tokio::test]
-async fn health_is_public_and_honest_about_research_state() {
+async fn health_is_public_and_reports_verified_delivery() {
     let response = app()
         .oneshot(
             Request::get("/healthz")
@@ -52,7 +52,7 @@ async fn health_is_public_and_honest_about_research_state() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = json(response).await;
     assert_eq!(body["status"], "ok");
-    assert_eq!(body["phase"], "protocol_research");
+    assert_eq!(body["phase"], "verified");
 }
 
 #[tokio::test]
@@ -69,7 +69,7 @@ async fn device_inventory_requires_authentication() {
 }
 
 #[tokio::test]
-async fn unverified_media_capabilities_fail_closed() {
+async fn verified_audio_capabilities_are_explicit() {
     let request = Request::get("/v1/devices/entrance/capabilities")
         .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
         .body(Body::empty())
@@ -80,8 +80,11 @@ async fn unverified_media_capabilities_fail_closed() {
         .unwrap_or_else(|error| panic!("router failed: {error}"));
     assert_eq!(response.status(), StatusCode::OK);
     let body = json(response).await;
-    assert_eq!(body["phase"], "protocol_research");
-    assert_eq!(body["available"], serde_json::json!([]));
+    assert_eq!(body["phase"], "verified");
+    assert_eq!(
+        body["available"],
+        serde_json::json!(["live_audio_receive", "live_audio_transmit"])
+    );
 }
 
 #[tokio::test]
@@ -118,6 +121,49 @@ async fn enrollment_cancellation_is_idempotent() {
         .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
         .body(Body::empty())
         .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(request)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn audio_session_requires_auth_before_offer_validation() {
+    let request = Request::post("/v1/devices/entrance/audio/sessions")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"offer_sdp":"invalid","mode":"listen"}"#))
+        .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(request)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn audio_session_rejects_unbounded_media_before_vendor_access() {
+    let request = Request::post("/v1/devices/entrance/audio/sessions")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"offer_sdp":"v=0\r\nm=video 9 RTP/AVP 96","mode":"talk"}"#,
+        ))
+        .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(request)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn audio_session_delete_is_idempotent() {
+    let request =
+        Request::delete("/v1/devices/entrance/audio/sessions/00000000-0000-0000-0000-000000000000")
+            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+            .body(Body::empty())
+            .unwrap_or_else(|error| panic!("request failed: {error}"));
     let response = app()
         .oneshot(request)
         .await
