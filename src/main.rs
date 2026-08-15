@@ -3,7 +3,8 @@ use std::{path::PathBuf, sync::Arc};
 use clap::{Parser, Subcommand};
 use ring_intercom_bridge::{
     BridgeConfig, Runtime, research::write_synthetic_discovery_fixture,
-    ring_client::RingReadOnlyClient, ring_media_canary::run_audio_canary, router,
+    ring_api_canary::run_api_canary, ring_client::RingReadOnlyClient,
+    ring_media_canary::run_audio_canary, router,
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -31,6 +32,14 @@ enum Command {
         #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(5..=30))]
         seconds: u64,
     },
+    ResearchApiCanary {
+        #[arg(long, default_value = "http://127.0.0.1:8775/")]
+        bridge_url: String,
+        #[arg(long, default_value = "/run/secrets/api_token")]
+        api_token_file: PathBuf,
+        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(5..=30))]
+        seconds: u64,
+    },
 }
 
 #[tokio::main]
@@ -55,6 +64,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             session_file,
             seconds,
         } => research_audio_canary(session_file, seconds).await,
+        Command::ResearchApiCanary {
+            bridge_url,
+            api_token_file,
+            seconds,
+        } => research_api_canary(bridge_url, api_token_file, seconds).await,
+    }
+}
+
+async fn research_api_canary(
+    bridge_url: String,
+    token_file: PathBuf,
+    seconds: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let evidence = run_api_canary(
+        &bridge_url,
+        &token_file,
+        std::time::Duration::from_secs(seconds),
+    )
+    .await?;
+    let passed = evidence.passes_release_gate();
+    println!("{}", serde_json::to_string(&evidence)?);
+    if passed {
+        Ok(())
+    } else {
+        Err("Ring consumer API canary did not pass the release gate".into())
     }
 }
 

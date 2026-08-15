@@ -4,6 +4,7 @@ pub mod config;
 pub mod error;
 pub mod model;
 pub mod research;
+pub mod ring_api_canary;
 pub mod ring_audio;
 mod ring_audio_manager;
 mod ring_audio_worker;

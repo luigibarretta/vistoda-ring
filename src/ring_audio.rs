@@ -12,20 +12,20 @@ pub enum AudioMode {
     Talk,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AudioSessionRequest {
     pub offer_sdp: String,
     pub mode: AudioMode,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IceCandidate {
     pub candidate: String,
     pub sdp_mline_index: u16,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AudioSessionCreated {
     pub session_id: String,
     pub answer_sdp: String,
