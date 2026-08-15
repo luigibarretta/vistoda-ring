@@ -40,6 +40,10 @@ enum Command {
         #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(5..=30))]
         seconds: u64,
     },
+    ResearchRecordings {
+        #[arg(long)]
+        session_file: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -69,6 +73,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             api_token_file,
             seconds,
         } => research_api_canary(bridge_url, api_token_file, seconds).await,
+        Command::ResearchRecordings { session_file } => {
+            let client = RingReadOnlyClient::new(session_file)?;
+            println!(
+                "{}",
+                serde_json::to_string(&client.inspect_recordings().await?)?
+            );
+            Ok(())
+        }
     }
 }
 

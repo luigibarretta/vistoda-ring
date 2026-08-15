@@ -56,6 +56,7 @@ pub async fn test_client(state: Arc<MockState>) -> TestHarness {
         .route("/oauth", post(oauth))
         .route("/session", post(register_session))
         .route("/devices", get(discover))
+        .route("/locations/loc-1/devices/42/events", get(events))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -78,6 +79,7 @@ pub async fn test_client(state: Arc<MockState>) -> TestHarness {
         oauth: format!("{base}/oauth"),
         session: format!("{base}/session"),
         discovery: format!("{base}/devices"),
+        client_api: base,
     };
     let client = RingReadOnlyClient::build(session_path.clone(), endpoints, false)
         .unwrap_or_else(|error| panic!("client setup failed: {error}"));
@@ -160,10 +162,25 @@ async fn discover(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Re
     }
     Json(json!({
         "other": [
-            {"id": 42, "kind": "intercom_handset_audio", "description": "Synthetic Entrance Intercom"},
+            {"id": 42, "kind": "intercom_handset_audio", "description": "Synthetic Entrance Intercom",
+             "location_id": "loc-1", "settings": {"recording_enabled": true},
+             "features": {"show_recordings": true}},
             {"id": 43, "kind": "third_party_garage_door_opener", "description": "Synthetic Other"}
         ]
     }))
+    .into_response()
+}
+
+async fn events(headers: HeaderMap) -> Response {
+    if !valid_bearer(&headers) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    Json(json!({"events": [
+        {"ding_id_str": "synthetic-1", "created_at": "2026-08-15T12:00:00Z",
+         "recording_status": "audio_ready", "state": "completed"},
+        {"ding_id_str": "synthetic-2", "created_at": "2026-08-15T12:05:00Z",
+         "recording_status": null, "state": "timed_out"}
+    ]}))
     .into_response()
 }
 

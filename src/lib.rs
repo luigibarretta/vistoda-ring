@@ -20,6 +20,7 @@ mod ring_media_handler;
 mod ring_media_network;
 mod ring_media_peer;
 pub mod ring_protocol;
+pub mod ring_recording;
 pub mod ring_session;
 mod ring_signal_wire;
 mod ring_signaling;

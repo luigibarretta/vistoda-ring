@@ -7,6 +7,7 @@ use crate::{error::BridgeError, ring_session::RingSession};
 pub const OAUTH_ENDPOINT: &str = "https://oauth.ring.com/oauth/token";
 pub const SESSION_ENDPOINT: &str = "https://api.ring.com/clients_api/session";
 pub const DISCOVERY_ENDPOINT: &str = "https://api.ring.com/clients_api/ring_devices";
+pub const CLIENT_API_ROOT: &str = "https://api.ring.com/clients_api";
 pub const STREAM_TICKET_ENDPOINT: &str =
     "https://prd-api-us.prd.rings.solutions/api/v1/clap/ticket/request/signalsocket";
 pub const SIGNALING_ORIGIN: &str = "wss://api.prod.signalling.ring.devices.a2z.com:443/ws";

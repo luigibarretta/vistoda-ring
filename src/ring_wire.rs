@@ -36,11 +36,34 @@ struct RawDevice {
     id: u64,
     kind: String,
     description: String,
+    #[serde(default)]
+    location_id: Option<String>,
+    #[serde(default)]
+    settings: RawSettings,
+    #[serde(default)]
+    features: RawFeatures,
 }
 
 pub struct RingIntercomIdentity {
     id: u64,
     description: String,
+    location_id: Option<String>,
+    recording_enabled: bool,
+    recordings_visible: bool,
+}
+
+#[derive(Default, Deserialize)]
+struct RawSettings {
+    #[serde(default)]
+    recording_enabled: bool,
+    #[serde(default)]
+    show_recordings: bool,
+}
+
+#[derive(Default, Deserialize)]
+struct RawFeatures {
+    #[serde(default)]
+    show_recordings: bool,
 }
 
 impl RingIntercomIdentity {
@@ -52,6 +75,21 @@ impl RingIntercomIdentity {
     #[must_use]
     pub fn description(&self) -> &str {
         &self.description
+    }
+
+    #[must_use]
+    pub fn location_id(&self) -> Option<&str> {
+        self.location_id.as_deref()
+    }
+
+    #[must_use]
+    pub const fn recording_enabled(&self) -> bool {
+        self.recording_enabled
+    }
+
+    #[must_use]
+    pub const fn recordings_visible(&self) -> bool {
+        self.recordings_visible
     }
 }
 
@@ -91,6 +129,9 @@ pub fn parse_devices(input: &[u8]) -> Result<Vec<RingIntercomIdentity>, BridgeEr
         intercoms.push(RingIntercomIdentity {
             id: device.id,
             description: device.description,
+            location_id: device.location_id,
+            recording_enabled: device.settings.recording_enabled,
+            recordings_visible: device.settings.show_recordings || device.features.show_recordings,
         });
     }
     Ok(intercoms)

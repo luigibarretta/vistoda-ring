@@ -72,3 +72,19 @@ async fn rate_limited_discovery_is_not_retried() {
     assert_eq!(state.oauth_calls.load(Ordering::SeqCst), 1);
     assert_eq!(state.discovery_calls.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test]
+async fn recording_evidence_is_sanitized_and_capability_aware() {
+    let state = Arc::new(MockState::default());
+    let harness = test_client(state).await;
+    let evidence = harness
+        .client
+        .inspect_recordings()
+        .await
+        .unwrap_or_else(|error| panic!("recording inspection failed: {error}"));
+    assert!(evidence.recording_enabled);
+    assert!(evidence.recordings_visible);
+    assert!(evidence.location_available);
+    assert_eq!(evidence.recent_events, 2);
+    assert_eq!(evidence.ready_recordings, 1);
+}

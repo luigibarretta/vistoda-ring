@@ -30,6 +30,8 @@ pub enum BridgeError {
     RateLimited,
     #[error("vendor enrollment is temporarily unavailable")]
     UpstreamUnavailable,
+    #[error("Ring call recording is not enabled or available")]
+    RecordingUnavailable,
     #[error("research fixture was rejected: {0}")]
     UnsafeFixture(String),
     #[error("vendor response was rejected: {0}")]
@@ -60,6 +62,9 @@ impl IntoResponse for BridgeError {
             Self::EnrollmentExpired => (StatusCode::GONE, "enrollment_expired"),
             Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             Self::UpstreamUnavailable => (StatusCode::BAD_GATEWAY, "upstream_unavailable"),
+            Self::RecordingUnavailable => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "recording_unavailable")
+            }
             Self::Configuration(_)
             | Self::UnsafeFixture(_)
             | Self::Protocol(_)

@@ -3,7 +3,7 @@ use crate::{
     error::BridgeError,
     ring_http::checked_body,
     ring_protocol::{
-        DISCOVERY_ENDPOINT, OAUTH_ENDPOINT, ProtocolResearch, SESSION_ENDPOINT,
+        CLIENT_API_ROOT, DISCOVERY_ENDPOINT, OAUTH_ENDPOINT, ProtocolResearch, SESSION_ENDPOINT,
         STREAM_TICKET_ENDPOINT, USER_AGENT,
     },
     ring_session::{RingSession, RingSessionStore},
@@ -28,6 +28,7 @@ struct Endpoints {
     oauth: String,
     session: String,
     discovery: String,
+    client_api: String,
 }
 impl Endpoints {
     fn production() -> Self {
@@ -35,6 +36,7 @@ impl Endpoints {
             oauth: OAUTH_ENDPOINT.into(),
             session: SESSION_ENDPOINT.into(),
             discovery: DISCOVERY_ENDPOINT.into(),
+            client_api: CLIENT_API_ROOT.into(),
         }
     }
 }
@@ -58,7 +60,6 @@ impl RingReadOnlyClient {
     pub fn new(session_path: PathBuf) -> Result<Self, BridgeError> {
         Self::build(session_path, Endpoints::production(), true)
     }
-
     fn build(
         session_path: PathBuf,
         endpoints: Endpoints,
@@ -110,7 +111,6 @@ impl RingReadOnlyClient {
             "discovery retry was exhausted".into(),
         ))
     }
-
     pub async fn prepare_audio_call(&self) -> Result<AudioCallGrant, BridgeError> {
         let devices = self.discover_intercoms().await?;
         let device_id = match devices.as_slice() {
@@ -166,7 +166,6 @@ impl RingReadOnlyClient {
         let body = checked_body(response, "OAuth refresh", AUTH_BODY_LIMIT).await?;
         self.accept_oauth(state, parse_oauth(&body)?)
     }
-
     fn accept_oauth(
         &self,
         state: &mut ClientState,
@@ -185,7 +184,6 @@ impl RingReadOnlyClient {
         state.rotation_pending = false;
         Ok(())
     }
-
     async fn ensure_registered(&self, state: &mut ClientState) -> Result<(), BridgeError> {
         if state
             .registered_until
@@ -245,6 +243,8 @@ const fn is_unauthorized(error: &BridgeError) -> bool {
     matches!(error, BridgeError::VendorRejected { status: 401, .. })
 }
 
+#[path = "ring_recording_provider.rs"]
+mod recordings;
 #[cfg(test)]
 #[path = "ring_client_tests.rs"]
 mod tests;
