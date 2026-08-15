@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use tokio::{
-    sync::{Mutex, oneshot},
+    sync::{Mutex, oneshot, watch},
     time::Instant,
 };
 use uuid::Uuid;
@@ -16,11 +16,13 @@ use crate::{
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(25);
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 const SESSION_COOLDOWN: Duration = Duration::from_secs(10);
 
 struct ActiveSession {
     device: String,
     cancel: Option<oneshot::Sender<()>>,
+    done: watch::Receiver<bool>,
 }
 
 #[derive(Default)]
@@ -66,6 +68,7 @@ impl RingAudioSessions {
         let id = Uuid::new_v4();
         let (cancel_tx, cancel_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = oneshot::channel();
+        let (done_tx, done_rx) = watch::channel(false);
         {
             let mut state = self.state.lock().await;
             state
@@ -86,18 +89,19 @@ impl RingAudioSessions {
                 ActiveSession {
                     device,
                     cancel: Some(cancel_tx),
+                    done: done_rx,
                 },
             );
         }
-        self.spawn(id, request.offer_sdp, ready_tx, cancel_rx);
+        self.spawn(id, request.offer_sdp, ready_tx, cancel_rx, done_tx);
         let negotiated = match tokio::time::timeout(START_TIMEOUT, ready_rx).await {
             Ok(Ok(Ok(value))) => value,
             Ok(Ok(Err(error))) => {
-                self.delete(id).await;
+                let _ = self.delete(id).await;
                 return Err(error);
             }
             Ok(Err(_)) | Err(_) => {
-                self.delete(id).await;
+                let _ = self.delete(id).await;
                 return Err(BridgeError::UpstreamUnavailable);
             }
         };
@@ -110,17 +114,29 @@ impl RingAudioSessions {
         })
     }
 
-    pub async fn delete(&self, id: Uuid) {
-        let cancel = self
-            .state
-            .lock()
-            .await
-            .active
-            .get_mut(&id)
-            .and_then(|active| active.cancel.take());
+    pub async fn delete(&self, id: Uuid) -> Result<(), BridgeError> {
+        let (cancel, mut done) = {
+            let mut state = self.state.lock().await;
+            let result = state
+                .active
+                .get_mut(&id)
+                .map(|active| (active.cancel.take(), active.done.clone()));
+            drop(state);
+            let Some(result) = result else {
+                return Ok(());
+            };
+            result
+        };
         if let Some(cancel) = cancel {
             let _ = cancel.send(());
         }
+        if !*done.borrow() {
+            tokio::time::timeout(STOP_TIMEOUT, done.changed())
+                .await
+                .map_err(|_| BridgeError::UpstreamUnavailable)?
+                .map_err(|_| BridgeError::UpstreamUnavailable)?;
+        }
+        Ok(())
     }
 
     fn spawn(
@@ -129,6 +145,7 @@ impl RingAudioSessions {
         offer: String,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         cancel: oneshot::Receiver<()>,
+        done: watch::Sender<bool>,
     ) {
         let runner = Arc::clone(&self.runner);
         let state = Arc::clone(&self.state);
@@ -140,6 +157,8 @@ impl RingAudioSessions {
                     .cooldowns
                     .insert(active.device, Instant::now() + SESSION_COOLDOWN);
             }
+            drop(state);
+            let _ = done.send(true);
         });
     }
 }

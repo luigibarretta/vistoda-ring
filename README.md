@@ -46,7 +46,7 @@ change access-control behaviour.
 | `POST /v1/enrollments/{id}` | consume one SMS code and persist the session | bearer |
 | `DELETE /v1/enrollments/{id}` | idempotently discard pending secrets | bearer |
 | `POST /v1/devices/{alias}/audio/sessions` | negotiate bounded WebRTC audio | bearer |
-| `DELETE /v1/devices/{alias}/audio/sessions/{id}` | idempotently end audio | bearer |
+| `DELETE /v1/devices/{alias}/audio/sessions/{id}` | end audio after local teardown, idempotently | bearer |
 
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.

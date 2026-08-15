@@ -34,8 +34,10 @@ consumer supplies a locally generated silent track. This matches the proven
 Ring transport while preserving a receive-only application policy.
 
 `DELETE /v1/devices/{alias}/audio/sessions/{id}` is idempotent. The bridge
-token remains in Home Assistant or the SceneTrove backend. Browser code talks
-only to its authenticated application backend.
+acknowledges it only after the local session worker has terminated and the
+post-call cooldown is committed. The bridge token remains in Home Assistant or
+the SceneTrove backend. Browser code talks only to its authenticated
+application backend.
 
 ## Home Assistant boundary
 

@@ -165,7 +165,7 @@ async fn delete_audio_session(
         return Err(BridgeError::DeviceNotFound);
     }
     if let Ok(id) = uuid::Uuid::parse_str(&session) {
-        runtime.audio.delete(id).await;
+        runtime.audio.delete(id).await?;
     }
     Ok(StatusCode::NO_CONTENT)
 }

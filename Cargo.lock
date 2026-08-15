@@ -2025,7 +2025,7 @@ dependencies = [
 
 [[package]]
 name = "ring-intercom-bridge"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "async-trait",
  "axum",

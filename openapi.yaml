@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.3.1
+  version: 0.3.2
   description: >-
     Private control-plane and bounded WebRTC signaling contract for Ring
     Intercom Audio. The bridge never exposes vendor or bridge credentials.
@@ -176,7 +176,7 @@ paths:
             format: uuid
       responses:
         "204":
-          description: Session closed or already absent
+          description: Local worker stopped, cooldown committed, or session already absent
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":

@@ -68,7 +68,8 @@ canaries; consumer contract tests are the next gate.
 After deployment, `research-api-canary` tests the complete authenticated HTTP
 consumer path from inside the hardened container. It accepts only a loopback
 HTTP origin, reads the mounted API token, negotiates one listen-mode peer and
-requires inbound PCMU, outbound silence, `DELETE 204` and local peer teardown.
+requires inbound PCMU, outbound silence, `DELETE 204` after worker teardown and
+local peer teardown.
 
 ```bash
 docker exec ring-intercom-bridge ring-intercom-bridge research-api-canary \
