@@ -24,6 +24,14 @@ struct DeviceEnvelope {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TicketResponse {
+    ticket: Zeroizing<String>,
+    #[serde(default, rename = "responseTimestampe")]
+    response_timestamp: Option<u64>,
+}
+
+#[derive(Deserialize)]
 struct RawDevice {
     id: u64,
     kind: String,
@@ -86,6 +94,14 @@ pub fn parse_devices(input: &[u8]) -> Result<Vec<RingIntercomIdentity>, BridgeEr
         });
     }
     Ok(intercoms)
+}
+
+pub fn parse_ticket(input: &[u8]) -> Result<Zeroizing<String>, BridgeError> {
+    let response: TicketResponse = serde_json::from_slice(input)?;
+    if !valid_token(&response.ticket) || response.response_timestamp == Some(0) {
+        return Err(BridgeError::Protocol("invalid stream ticket".into()));
+    }
+    Ok(response.ticket)
 }
 
 fn valid_token(token: &str) -> bool {

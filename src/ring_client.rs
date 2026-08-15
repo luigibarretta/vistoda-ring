@@ -1,35 +1,34 @@
-use std::{path::PathBuf, time::Duration};
-
-use reqwest::{Client, StatusCode, redirect::Policy};
-use serde_json::Value;
-use tokio::sync::Mutex;
-use tokio::time::Instant;
-use zeroize::Zeroizing;
-
+pub use crate::ring_wire::RingIntercomIdentity;
 use crate::{
     error::BridgeError,
     ring_http::checked_body,
     ring_protocol::{
-        DISCOVERY_ENDPOINT, OAUTH_ENDPOINT, ProtocolResearch, SESSION_ENDPOINT, USER_AGENT,
+        DISCOVERY_ENDPOINT, OAUTH_ENDPOINT, ProtocolResearch, SESSION_ENDPOINT,
+        STREAM_TICKET_ENDPOINT, USER_AGENT,
     },
     ring_session::{RingSession, RingSessionStore},
     ring_wire::{OAuthResponse, parse_devices, parse_oauth},
 };
-
-pub use crate::ring_wire::RingIntercomIdentity;
-
+use reqwest::{Client, StatusCode, redirect::Policy};
+use serde_json::Value;
+use std::{path::PathBuf, time::Duration};
+use tokio::sync::Mutex;
+use tokio::time::Instant;
+use zeroize::Zeroizing;
+pub struct AudioCallGrant {
+    pub device_id: u64,
+    pub ticket: Zeroizing<String>,
+}
 const AUTH_BODY_LIMIT: usize = 64 * 1024;
 const SESSION_BODY_LIMIT: usize = 64 * 1024;
 const DISCOVERY_BODY_LIMIT: usize = 2 * 1024 * 1024;
 const EXPIRY_MARGIN: Duration = Duration::from_secs(60);
 const SESSION_LIFETIME: Duration = Duration::from_secs(12 * 60 * 60);
-
 struct Endpoints {
     oauth: String,
     session: String,
     discovery: String,
 }
-
 impl Endpoints {
     fn production() -> Self {
         Self {
@@ -39,26 +38,22 @@ impl Endpoints {
         }
     }
 }
-
 struct AccessToken {
     value: Zeroizing<String>,
     valid_until: Instant,
 }
-
 struct ClientState {
     session: RingSession,
     access: Option<AccessToken>,
     registered_until: Option<Instant>,
     rotation_pending: bool,
 }
-
 pub struct RingReadOnlyClient {
     http: Client,
     endpoints: Endpoints,
     store: RingSessionStore,
     state: Mutex<ClientState>,
 }
-
 impl RingReadOnlyClient {
     pub fn new(session_path: PathBuf) -> Result<Self, BridgeError> {
         Self::build(session_path, Endpoints::production(), true)
@@ -116,6 +111,31 @@ impl RingReadOnlyClient {
         ))
     }
 
+    pub async fn prepare_audio_call(&self) -> Result<AudioCallGrant, BridgeError> {
+        let devices = self.discover_intercoms().await?;
+        let device_id = match devices.as_slice() {
+            [device] => device.id(),
+            _ => return Err(BridgeError::Protocol("expected one Ring Intercom".into())),
+        };
+        let mut state = self.state.lock().await;
+        self.ensure_authenticated(&mut state).await?;
+        self.ensure_registered(&mut state).await?;
+        let response = self
+            .http
+            .post(STREAM_TICKET_ENDPOINT)
+            .bearer_auth(access_value(&state)?)
+            .header("hardware_id", state.session.hardware_id().to_string())
+            .header(reqwest::header::USER_AGENT, USER_AGENT)
+            .send()
+            .await
+            .map_err(|error| BridgeError::Transport("stream ticket", error))?;
+        drop(state);
+        let body = checked_body(response, "stream ticket", AUTH_BODY_LIMIT).await?;
+        Ok(AudioCallGrant {
+            device_id,
+            ticket: crate::ring_wire::parse_ticket(&body)?,
+        })
+    }
     async fn ensure_authenticated(&self, state: &mut ClientState) -> Result<(), BridgeError> {
         if state.rotation_pending {
             self.store.persist(&state.session)?;

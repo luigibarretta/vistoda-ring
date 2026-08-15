@@ -10,6 +10,7 @@
 | [0006](0006-maintainability-and-verification.md) | LOC and verification gates |
 | [0007](0007-read-only-ring-client.md) | Bounded read-only Ring client |
 | [0008](0008-home-assistant-enrollment.md) | Native HA enrollment boundary |
+| [0009](0009-ring-signalsocket-audio.md) | Proven Ring signalsocket audio protocol |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.

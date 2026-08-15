@@ -7,14 +7,16 @@ only after protocol proof, live audio delivery to Home Assistant and SceneTrove.
 
 The running service is deliberately **fail-closed**. Version `0.2.x` exposes an
 authenticated inventory and capability API, but reports all media capabilities
-as unavailable while the Ring Intercom call protocol remains unverified. It
-does not log in to Ring, open the door, initiate calls or claim streaming
-support. An authenticated, rate-limited enrollment API can create the dedicated
+as unavailable while consumer session contracts remain unfinished. It does not
+open the door, initiate calls from its HTTP service or claim streaming support.
+An authenticated, rate-limited enrollment API can create the dedicated
 session through Ring's normal password and SMS-MFA flow; retained pending
 password state is zeroizing and credentials are never written to configuration.
-An explicit research subcommand provides refresh-token-only,
-read-only device discovery and emits only a create-new synthetic fixture; it is
-not invoked by the service.
+Explicit research subcommands provide refresh-token-only discovery and a
+bounded audio canary; neither is invoked by the service. The owned audio-only
+Intercom has now completed repeated real bidirectional WebRTC/PCMU canaries
+with inbound RTP, outbound silence and complete teardown. Consumer media
+endpoints remain closed until their lifecycle and contract gates pass.
 
 The official Ring application provides two-way audio for Intercom Audio, while
 the public Home Assistant integration and the major unofficial clients expose
@@ -49,8 +51,8 @@ change access-control behaviour.
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.
 
-See [`openapi.yaml`](openapi.yaml). No live endpoint exists before a real audio
-canary and contract tests prove it.
+See [`openapi.yaml`](openapi.yaml). No live HTTP endpoint exists until repeated
+canaries and consumer session contract tests pass.
 
 ## Development
 

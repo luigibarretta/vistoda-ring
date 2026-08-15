@@ -16,24 +16,35 @@
   Android client identity, a stable hardware UUID and a rotating refresh token.
 - The same revision registers an Android session at `clients_api/session`
   before requesting `clients_api/ring_devices`; its API metadata version is 11.
+- `python-ring-doorbell` and `ring-client-api` obtain one ticket from the Ring
+  application API, open the version 4 signalsocket WebSocket, send a WebRTC
+  `live_view` offer and activate the returned session. Their audio offer
+  includes Opus and PCMU with a `sendrecv` return track.
+- `ring-intercom-video` demonstrates that the streaming omission on
+  `RingOther` is a client class boundary for Intercom Video, not a different
+  signaling service.
+- An initial bounded owned-device canary and four consecutive ten-second
+  repetitions on 2026-08-15 proved the same path on
+  `intercom_handset_audio`: bidirectional SDP, connected DTLS/SRTP, inbound
+  PCMU RTP, outbound silence and complete teardown without a remote close.
+- The maintained canary uses `webrtc` 0.20.2 and passes the strict RustSec
+  audit; its semantic output contains no Ring identity, SDP, ICE or audio.
 
-The Rust implementation currently models and tests these request shapes
-offline. It now contains an opt-in read-only client with fixed endpoints,
-bounded responses and atomic token rotation, but the running service does not
-instantiate it and no request has been sent to Ring.
+The Rust implementation contains an opt-in discovery command and a separate
+5–30 second audio canary. Neither is instantiated by the running HTTP service.
 
-## Current inference
+## Current conclusion
 
-The official app likely uses a cloud-mediated real-time session distinct from
-the camera `LiveCall` path. WebRTC is plausible but must not be asserted until a
-redacted owned-device trace proves signalling and media transport.
+Ring Intercom Audio uses Ring's ordinary cloud signalsocket WebRTC path. The
+public clients omit it because their Intercom wrapper does not inherit the
+camera streaming methods. Consumer lifecycle and relay contracts remain to be
+implemented; the vendor media protocol is no longer the unknown.
 
 ## Unknowns
 
-- signalling endpoint, ticket type and session lifetime;
-- whether calls can start on demand or only while a ding is active;
-- ICE/TURN requirements and codec set;
-- whether receive-only negotiation is accepted;
+- maximum reliable session lifetime and concurrency;
+- whether receive-only negotiation is accepted by all firmware revisions;
+- Opus behaviour on the owned audio-only model;
 - call concurrency and throttling behaviour;
 - whether the official app uses certificate pinning;
 - whether audio recording is available or subscription-bound.
@@ -55,3 +66,5 @@ redacted owned-device trace proves signalling and media transport.
 - <https://github.com/dgreif/ring/blob/main/packages/ring-client-api/ring-intercom.ts>
 - <https://github.com/dgreif/ring/blob/638d5285aea5f34d44d9bacbb41917f736764d49e/packages/ring-client-api/rest-client.ts>
 - <https://github.com/tsightler/ring-mqtt/wiki>
+- <https://github.com/python-ring-doorbell/python-ring-doorbell/blob/main/ring_doorbell/webrtcstream.py>
+- <https://github.com/cmos486/ring-intercom-video>

@@ -20,10 +20,10 @@ Exit criterion: clean CI and no Ring session or credential dependency.
 - [x] Model refresh and session-registration bodies without password login.
 - [x] Implement bounded read-only discovery with atomic token rotation.
 - [x] Generate only synthetic, create-new discovery evidence.
-- [ ] Inventory the exact Intercom Audio device kind through a redacted fixture.
-- [ ] Identify the official app call-signalling sequence.
-- [ ] Define a redaction format for HTTP/WebSocket message fixtures.
-- [ ] Replay parsing and state transitions entirely offline.
+- [x] Inventory the exact Intercom Audio device kind through a redacted fixture.
+- [x] Identify the official app call-signalling sequence.
+- [x] Define a redacted semantic evidence format for signaling canaries.
+- [x] Parse and test signaling state transitions without retained vendor data.
 
 Exit criterion: deterministic fixture tests explain authentication, signalling,
 call start, keepalive and call termination without containing secrets.
@@ -31,17 +31,19 @@ call start, keepalive and call termination without containing secrets.
 ## Phase 2 — receive-only canary
 
 - [x] Implement bounded UI enrollment for one dedicated, revocable session.
-- [ ] Complete one owner-driven live enrollment through Home Assistant.
-- [ ] Start one operator-triggered call with a 30-second hard limit.
-- [ ] Receive authenticated RTP audio and verify codec/timestamps.
-- [ ] Stop and prove all tasks, sockets and keepalives terminate.
+- [x] Complete one owner-driven live enrollment through Home Assistant.
+- [x] Start an on-demand call with a 30-second hard limit.
+- [x] Receive authenticated RTP audio and verify codec/payload counters.
+- [x] Stop and prove WebSocket, peer connection and silence writer terminate.
+- [x] Complete three consecutive bounded canaries without account warnings.
 
 Exit criterion: three consecutive bounded canaries, no account warnings, no
 door action and no residual live session.
 
 ## Phase 3 — full-duplex audio
 
-- [ ] Negotiate microphone return audio with explicit user action.
+- [x] Negotiate the microphone return direction and send bounded silence.
+- [ ] Send real microphone audio only through an explicit consumer action.
 - [ ] Add echo-safe codec and jitter handling without unbounded buffering.
 - [ ] Prove mute, disconnect and deadline behaviour.
 

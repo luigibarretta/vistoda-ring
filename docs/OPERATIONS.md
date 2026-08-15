@@ -2,9 +2,8 @@
 
 ## Current phase
 
-Version `0.2.x` remains a fail-closed media scaffold. The only service path that
-may contact Ring is an explicit, bearer-authenticated enrollment request. Media
-capabilities remain unavailable until their protocol gates pass.
+The HTTP service remains fail-closed. Enrollment is its only Ring network path;
+discovery and audio canaries are explicit CLI commands and are never scheduled.
 
 ## Configuration
 
@@ -42,6 +41,29 @@ ring-intercom-bridge research-discover \
 Do not run this command until an explicitly enrolled, revocable session exists.
 No real session belongs in the repository, and enrollment never scrapes Home
 Assistant `.storage`.
+
+## Audio canary
+
+`research-audio-canary` uses the enrolled session and exact discovered
+Intercom. It requests one signaling ticket and runs one PCMU `sendrecv` WebRTC
+call for 5–30 seconds. The return track is silence, not a microphone. Output is
+semantic JSON only; SDP, ICE, tickets and identifiers are never printed.
+
+```bash
+RUST_LOG=ring_intercom_bridge=error,webrtc=off,rtc=off \
+  ring-intercom-bridge research-audio-canary \
+  --session-file /private/runtime/ring-session.json --seconds 5
+```
+
+Run it manually, never from a restart policy or healthcheck. Stop after any
+vendor `401`, `403`, `429`, account warning or non-zero remote close code. A
+successful result requires `session_created`, `answer_received`,
+`bidirectional_negotiated`, `peer_connected`, inbound RTP, outbound silence and
+`teardown: complete`.
+
+The owned-device release gate completed four consecutive ten-second runs with
+inbound RTP and outbound silence on 2026-08-15. Do not schedule further
+canaries; consumer contract tests are the next gate.
 
 ## Home Assistant enrollment
 
