@@ -65,6 +65,9 @@ docker build -t ring-intercom-bridge:test .
 docker run --rm --network none --read-only ring-intercom-bridge:test --version
 ```
 
+The declared MSRV is Rust 1.96, required by the audited WebRTC dependency
+graph and enforced by the production builder image.
+
 Every maintained source or documentation file is limited to 250 lines. Python,
 JavaScript and TypeScript sources are rejected by the repository test suite.
 

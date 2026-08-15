@@ -2,7 +2,7 @@
 name = "ring-intercom-bridge"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.96"
 authors = ["Luigi Barretta"]
 description = "Bounded Ring Intercom audio bridge for Home Assistant and SceneTrove"
 license = "Apache-2.0"

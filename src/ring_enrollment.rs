@@ -16,7 +16,7 @@ use crate::{
     ring_protocol::OAUTH_ENDPOINT,
 };
 
-const ENROLLMENT_TTL: Duration = Duration::from_secs(120);
+const ENROLLMENT_TTL: Duration = Duration::from_mins(2);
 const START_COOLDOWN: Duration = Duration::from_secs(10);
 
 #[derive(Deserialize)]

@@ -22,8 +22,8 @@ pub struct AudioCallGrant {
 const AUTH_BODY_LIMIT: usize = 64 * 1024;
 const SESSION_BODY_LIMIT: usize = 64 * 1024;
 const DISCOVERY_BODY_LIMIT: usize = 2 * 1024 * 1024;
-const EXPIRY_MARGIN: Duration = Duration::from_secs(60);
-const SESSION_LIFETIME: Duration = Duration::from_secs(12 * 60 * 60);
+const EXPIRY_MARGIN: Duration = Duration::from_mins(1);
+const SESSION_LIFETIME: Duration = Duration::from_hours(12);
 struct Endpoints {
     oauth: String,
     session: String,
