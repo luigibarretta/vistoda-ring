@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
@@ -19,7 +19,7 @@ jobs:
       - run: cargo install cargo-audit --locked
       - run: cargo audit --deny warnings
       - run: >-
-          docker build --build-arg VERSION=0.1.0+ci --build-arg REVISION=ci
+          docker build --build-arg VERSION=0.5.0+ci --build-arg REVISION=ci
           --tag ring-intercom-bridge:test .
       - run: >-
           docker run --rm --network none --read-only --user 10001:10001
