@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.6.0
+  version: 0.7.0
   description: >-
-    Private control-plane and bounded WebRTC signaling contract for Ring
-    Intercom Audio. The bridge never exposes vendor or bridge credentials.
+    Private control-plane, direct WebRTC and bounded native PCMU relay contract
+    for Ring Intercom Audio. Vendor credentials never leave the bridge.
 servers:
   - url: http://127.0.0.1:8775
 paths:
@@ -139,37 +139,9 @@ paths:
         "404":
           description: Unknown alias
   /v1/devices/{device}/audio/sessions:
-    post:
-      operationId: createAudioSession
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/DeviceAlias"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AudioSessionRequest"
-      responses:
-        "201":
-          description: Bounded browser-to-Ring WebRTC session negotiated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AudioSession"
-        "400":
-          description: Offer violates the audio-only PCMU contract
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Unknown alias
-        "409":
-          description: This device already owns an active session
-        "429":
-          description: Per-device post-session cooldown
-        "502":
-          description: Ring signaling is unavailable
+    $ref: "./docs/openapi/audio-paths.yaml#/Sessions"
+  /v1/devices/{device}/audio/relay:
+    $ref: "./docs/openapi/audio-paths.yaml#/Relay"
   /v1/devices/{device}/status:
     $ref: "./docs/openapi/control-paths.yaml#/Status"
   /v1/devices/{device}/unlock:
@@ -177,25 +149,7 @@ paths:
   /v1/devices/{device}/settings:
     $ref: "./docs/openapi/control-paths.yaml#/Settings"
   /v1/devices/{device}/audio/sessions/{session}:
-    delete:
-      operationId: deleteAudioSession
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/DeviceAlias"
-        - name: session
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "204":
-          description: Local worker stopped, cooldown committed, or session already absent
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: Unknown alias
+    $ref: "./docs/openapi/audio-paths.yaml#/Session"
   /v1/devices/{device}/recordings:
     $ref: "./docs/openapi/recording-paths.yaml#/Recordings"
   /v1/devices/{device}/recordings/{recording}:

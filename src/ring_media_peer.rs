@@ -8,28 +8,17 @@ use std::{
 
 use rtc::{
     interceptor::Registry,
-    media::Sample,
-    media_stream::MediaStreamTrack,
     peer_connection::{
         configuration::{
-            RTCConfigurationBuilder,
-            interceptor_registry::register_default_interceptors,
-            media_engine::{MIME_TYPE_PCMU, MediaEngine},
+            RTCConfigurationBuilder, interceptor_registry::register_default_interceptors,
         },
         sdp::RTCSessionDescription,
         transport::RTCIceServer,
     },
-    rtp_transceiver::rtp_sender::{
-        RTCRtpCodec, RTCRtpCodecParameters, RTCRtpCodingParameters, RTCRtpEncodingParameters,
-        RtpCodecKind,
-    },
 };
-use tokio::sync::Notify;
-use uuid::Uuid;
+use tokio::sync::{Notify, mpsc};
 use webrtc::{
-    media_stream::{
-        Track, track_local::TrackLocal, track_local::static_sample::TrackLocalStaticSample,
-    },
+    media_stream::{track_local::TrackLocal, track_local::static_sample::TrackLocalStaticSample},
     peer_connection::{PeerConnection, PeerConnectionBuilder, RTCIceCandidateInit},
     rtp_transceiver::RtpSender,
     runtime::{Runtime, TokioRuntime, channel},
@@ -40,6 +29,9 @@ use crate::{
     error::BridgeError::Protocol,
     ring_media_handler::{Handler, PeerSnapshot, PeerStats},
     ring_media_network::routed_local_ip,
+    ring_media_sender,
+    ring_media_setup::{local_track, media_engine},
+    ring_relay_metrics::RelayMetrics,
 };
 
 pub struct MediaPeer {
@@ -53,6 +45,20 @@ pub struct MediaPeer {
 }
 impl MediaPeer {
     pub async fn new() -> Result<Self, BridgeError> {
+        Self::build(None, None).await
+    }
+
+    pub async fn new_relay(
+        outbound: mpsc::Sender<Vec<u8>>,
+        metrics: Arc<RelayMetrics>,
+    ) -> Result<Self, BridgeError> {
+        Self::build(Some(outbound), Some(metrics)).await
+    }
+
+    async fn build(
+        outbound: Option<mpsc::Sender<Vec<u8>>>,
+        relay_metrics: Option<Arc<RelayMetrics>>,
+    ) -> Result<Self, BridgeError> {
         let (codec, mut engine) = media_engine()?;
         let registry = register_default_interceptors(Registry::new(), &mut engine)
             .map_err(|_| protocol("WebRTC interceptor setup failed"))?;
@@ -65,6 +71,8 @@ impl MediaPeer {
             connected: Arc::clone(&connected),
             gather_complete: gather_tx,
             runtime: Arc::clone(&runtime),
+            outbound,
+            relay_metrics,
         });
         let config = RTCConfigurationBuilder::new()
             .with_ice_servers(vec![RTCIceServer {
@@ -142,41 +150,39 @@ impl MediaPeer {
             .map_err(|_| protocol("remote ICE candidate was rejected"))
     }
     pub fn start_silence(&self, deadline: Duration) {
-        let track = Arc::clone(&self.local_audio);
-        let sender = Arc::clone(&self.sender);
-        let connected = Arc::clone(&self.connected);
-        let stopped = Arc::clone(&self.stopped);
-        let stats = Arc::clone(&self.stats);
-        tokio::spawn(async move {
-            if tokio::time::timeout(deadline, connected.notified())
-                .await
-                .is_err()
-            {
-                return;
-            }
-            let Ok(payload_type) = negotiated_payload_type(&sender).await else {
-                return;
-            };
-            let Some(ssrc) = track.ssrcs().await.first().copied() else {
-                return;
-            };
-            let end = tokio::time::Instant::now() + deadline;
-            let mut interval = tokio::time::interval(Duration::from_millis(20));
-            while tokio::time::Instant::now() < end && !stopped.load(Ordering::Relaxed) {
-                interval.tick().await;
-                let result = track
-                    .sample_writer(ssrc, payload_type)
-                    .write_sample(&Sample {
-                        data: vec![0xff; 160].into(),
-                        duration: Duration::from_millis(20),
-                        ..Default::default()
-                    })
-                    .await;
-                if result.is_ok() {
-                    stats.sent_silence();
-                }
-            }
-        });
+        let (sender, receiver) = mpsc::channel(1);
+        drop(sender);
+        self.start_audio(receiver, deadline, None);
+    }
+
+    pub fn start_audio(
+        &self,
+        receiver: mpsc::Receiver<Vec<u8>>,
+        deadline: Duration,
+        metrics: Option<Arc<RelayMetrics>>,
+    ) {
+        ring_media_sender::spawn(
+            Arc::clone(&self.local_audio),
+            Arc::clone(&self.sender),
+            Arc::clone(&self.connected),
+            Arc::clone(&self.stopped),
+            Arc::clone(&self.stats),
+            receiver,
+            deadline,
+            metrics,
+        );
+    }
+
+    pub async fn wait_connected(&self, deadline: Duration) -> Result<(), BridgeError> {
+        let notified = self.connected.notified();
+        tokio::pin!(notified);
+        if self.stats.is_connected() {
+            return Ok(());
+        }
+        tokio::time::timeout(deadline, &mut notified)
+            .await
+            .map_err(|_| protocol("peer connection timed out"))?;
+        Ok(())
     }
     pub async fn snapshot(&self) -> PeerSnapshot {
         self.stats.snapshot().await
@@ -189,57 +195,6 @@ impl MediaPeer {
             .await
             .map_err(|_| protocol("peer close failed"))
     }
-}
-
-fn media_engine() -> Result<(RTCRtpCodecParameters, MediaEngine), BridgeError> {
-    let codec = RTCRtpCodecParameters {
-        rtp_codec: RTCRtpCodec {
-            mime_type: MIME_TYPE_PCMU.to_owned(),
-            clock_rate: 8_000,
-            channels: 1,
-            sdp_fmtp_line: String::new(),
-            rtcp_feedback: vec![],
-        },
-        payload_type: 0,
-    };
-    let mut engine = MediaEngine::default();
-    engine
-        .register_codec(codec.clone(), RtpCodecKind::Audio)
-        .map_err(|_| protocol("PCMU codec setup failed"))?;
-    Ok((codec, engine))
-}
-
-fn local_track(codec: &RTCRtpCodecParameters) -> Result<Arc<TrackLocalStaticSample>, BridgeError> {
-    let id = Uuid::new_v4();
-    let ssrc = u32::from_le_bytes(id.as_bytes()[..4].try_into().unwrap_or([0, 0, 0, 1])).max(1);
-    TrackLocalStaticSample::new(MediaStreamTrack::new(
-        "ring-intercom-canary".into(),
-        "audio".into(),
-        "ring-intercom-canary".into(),
-        RtpCodecKind::Audio,
-        vec![RTCRtpEncodingParameters {
-            rtp_coding_parameters: RTCRtpCodingParameters {
-                ssrc: Some(ssrc),
-                ..Default::default()
-            },
-            codec: codec.rtp_codec.clone(),
-            ..Default::default()
-        }],
-    ))
-    .map(Arc::new)
-    .map_err(|_| protocol("local audio track setup failed"))
-}
-
-async fn negotiated_payload_type(sender: &Arc<dyn RtpSender>) -> Result<u8, BridgeError> {
-    sender
-        .get_parameters()
-        .await
-        .map_err(|_| protocol("audio negotiation unavailable"))?
-        .rtp_parameters
-        .codecs
-        .first()
-        .map(|codec| codec.payload_type)
-        .ok_or_else(|| protocol("audio codec was not negotiated"))
 }
 
 fn protocol(message: &str) -> BridgeError {

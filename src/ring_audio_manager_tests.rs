@@ -114,3 +114,18 @@ async fn delete_ack_waits_for_worker_teardown() {
         .unwrap_or_else(|error| panic!("delete failed: {error}"));
     assert!(stopped.load(Ordering::SeqCst));
 }
+
+#[tokio::test]
+async fn native_relay_and_direct_webrtc_share_exclusivity() {
+    let sessions = RingAudioSessions::new(Arc::new(FakeRunner));
+    let relay = sessions
+        .reserve_relay("entrance".into())
+        .await
+        .unwrap_or_else(|error| panic!("relay reserve failed: {error}"));
+    assert!(sessions.start("entrance".into(), request()).await.is_err());
+    assert!(sessions.start("other".into(), request()).await.is_ok());
+    sessions
+        .finish_relay(relay, SessionEndReason::UserStop)
+        .await;
+    assert!(sessions.reserve_relay("entrance".into()).await.is_err());
+}

@@ -4,12 +4,14 @@ use std::sync::{
 };
 
 use rtc::peer_connection::configuration::media_engine::MIME_TYPE_PCMU;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, Notify, mpsc};
 use webrtc::{
     media_stream::track_remote::{TrackRemote, TrackRemoteEvent},
     peer_connection::{PeerConnectionEventHandler, RTCIceGatheringState, RTCPeerConnectionState},
     runtime::{Runtime, Sender},
 };
+
+use crate::{ring_relay_metrics::RelayMetrics, ring_relay_protocol::MAX_MESSAGE_BYTES};
 
 #[derive(Default)]
 pub struct PeerStats {
@@ -29,6 +31,10 @@ pub struct PeerSnapshot {
 }
 
 impl PeerStats {
+    pub fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::Relaxed)
+    }
+
     pub fn sent_silence(&self) {
         self.silent_packets.fetch_add(1, Ordering::Relaxed);
     }
@@ -58,6 +64,8 @@ pub struct Handler {
     pub connected: Arc<Notify>,
     pub gather_complete: Sender<()>,
     pub runtime: Arc<dyn Runtime>,
+    pub outbound: Option<mpsc::Sender<Vec<u8>>>,
+    pub relay_metrics: Option<Arc<RelayMetrics>>,
 }
 
 #[async_trait::async_trait]
@@ -83,12 +91,34 @@ impl PeerConnectionEventHandler for Handler {
             *self.stats.codec.lock().await = Some(codec.mime_type);
         }
         let stats = Arc::clone(&self.stats);
+        let outbound = self.outbound.clone();
+        let relay_metrics = self.relay_metrics.clone();
         self.runtime.spawn(Box::pin(async move {
             while let Some(event) = track.poll().await {
                 if let TrackRemoteEvent::OnRtpPacket(packet) = event {
                     stats.received_packets.fetch_add(1, Ordering::Relaxed);
                     let length = u64::try_from(packet.payload.len()).unwrap_or(u64::MAX);
                     stats.received_bytes.fetch_add(length, Ordering::Relaxed);
+                    if let Some(sender) = &outbound {
+                        if packet.payload.is_empty() || packet.payload.len() > MAX_MESSAGE_BYTES {
+                            if let Some(metrics) = &relay_metrics {
+                                metrics.ring_frame_dropped();
+                            }
+                            continue;
+                        }
+                        match sender.try_send(packet.payload.to_vec()) {
+                            Ok(()) => {
+                                if let Some(metrics) = &relay_metrics {
+                                    metrics.ring_frame_forwarded(length);
+                                }
+                            }
+                            Err(_) => {
+                                if let Some(metrics) = &relay_metrics {
+                                    metrics.ring_frame_dropped();
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }));

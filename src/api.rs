@@ -23,14 +23,16 @@ use crate::{
     ring_metrics::RingMetrics,
     ring_provider::RingProvider,
     ring_recording_manager::RingRecordings,
+    ring_relay_metrics::RelayMetrics,
 };
 
 pub struct Runtime {
     pub config: BridgeConfig,
     enrollment: RingEnrollmentManager,
-    audio: RingAudioSessions,
+    pub(crate) audio: RingAudioSessions,
     pub(crate) recordings: Arc<RingRecordings>,
     metrics: Arc<RingMetrics>,
+    pub(crate) relay_metrics: Arc<RelayMetrics>,
     pub(crate) provider: Arc<RingProvider>,
 }
 
@@ -39,6 +41,7 @@ impl Runtime {
         let enrollment = RingEnrollmentManager::production(config.session_file.clone())?;
         let provider = Arc::new(RingProvider::new(config.session_file.clone()));
         let metrics = Arc::new(RingMetrics::default());
+        let relay_metrics = Arc::new(RelayMetrics::default());
         let audio = RingAudioSessions::production(Arc::clone(&provider), Arc::clone(&metrics));
         let recordings = RingRecordings::production(config.recording_dir.clone())?;
         Ok(Self {
@@ -47,6 +50,7 @@ impl Runtime {
             audio,
             recordings,
             metrics,
+            relay_metrics,
             provider,
         })
     }
@@ -84,6 +88,7 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
             delete(delete_audio_session),
         )
         .merge(crate::ring_control_api::routes())
+        .merge(crate::ring_relay_api::routes())
         .merge(crate::ring_recording_api::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(runtime)
@@ -134,7 +139,11 @@ async fn prometheus_metrics(
             axum::http::header::CONTENT_TYPE,
             "text/plain; version=0.0.4; charset=utf-8",
         )],
-        runtime.metrics.render(),
+        format!(
+            "{}{}",
+            runtime.metrics.render(),
+            runtime.relay_metrics.render()
+        ),
     )
 }
 

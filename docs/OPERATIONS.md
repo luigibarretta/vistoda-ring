@@ -100,6 +100,20 @@ bridge never retries rejected credentials, MFA or HTTP 429 responses.
 6. Submit only a fully gathered audio-only PCMU offer through Vistoda or an
    approved backend, then always send the idempotent session `DELETE`.
 
+## Native Apple relay
+
+The relay WebSocket is private and bearer-authenticated. It is intended only
+for Home Assistant's authenticated HTTP proxy; do not publish it through the
+external reverse proxy or place its bearer in an iPhone or Watch application.
+The server announces `vistoda.pcmu.v1`, sends bounded raw PCMU payloads and
+accepts only 160-byte client PCMU frames. A text `{"type":"stop"}` requests a
+clean teardown; a socket close has the same bounded effect.
+
+Relay and direct WebRTC calls share one per-device slot and the ten-second
+post-call cooldown. While muted, the client sends no audio and the bridge
+supplies PCMU silence. Inspect aggregate relay frame/drop counters under
+`/metrics`; no device or session identifier is emitted.
+
 ## Local call recording archive
 
 Vistoda records only an active browser communication. Its recorder mixes the

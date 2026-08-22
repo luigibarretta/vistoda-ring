@@ -23,14 +23,14 @@ use crate::{
     ring_audio_worker::ProductionSessionRunner,
     ring_metrics::RingMetrics,
     ring_provider::RingProvider,
+    ring_session_gate::{SessionGate, SessionPermit},
+    ring_session_reason::requested_reason,
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(25);
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
-const SESSION_COOLDOWN: Duration = Duration::from_secs(10);
-
 struct ActiveSession {
-    device: String,
+    permit: SessionPermit,
     cancel: Option<oneshot::Sender<()>>,
     done: watch::Receiver<bool>,
     requested_end: Arc<AtomicUsize>,
@@ -50,7 +50,12 @@ struct SessionTask {
 #[derive(Default)]
 struct SessionState {
     active: BTreeMap<Uuid, ActiveSession>,
-    cooldowns: BTreeMap<String, Instant>,
+}
+
+pub struct RelayReservation {
+    pub id: Uuid,
+    permit: SessionPermit,
+    started_at: Instant,
 }
 
 #[async_trait]
@@ -68,6 +73,7 @@ pub struct RingAudioSessions {
     state: Arc<Mutex<SessionState>>,
     runner: Arc<dyn SessionRunner>,
     metrics: Arc<RingMetrics>,
+    gate: SessionGate,
 }
 
 impl RingAudioSessions {
@@ -85,6 +91,7 @@ impl RingAudioSessions {
             state: Arc::new(Mutex::new(SessionState::default())),
             runner,
             metrics,
+            gate: SessionGate::default(),
         }
     }
 
@@ -100,25 +107,13 @@ impl RingAudioSessions {
         let (ready_tx, ready_rx) = oneshot::channel();
         let (done_tx, done_rx) = watch::channel(false);
         let requested_end = Arc::new(AtomicUsize::new(0));
+        let permit = self.gate.reserve(device, id).await?;
         {
             let mut state = self.state.lock().await;
-            state
-                .cooldowns
-                .retain(|_, deadline| *deadline > Instant::now());
-            if state
-                .active
-                .values()
-                .any(|session| session.device == device)
-            {
-                return Err(BridgeError::SessionBusy);
-            }
-            if state.cooldowns.contains_key(&device) {
-                return Err(BridgeError::RateLimited);
-            }
             state.active.insert(
                 id,
                 ActiveSession {
-                    device,
+                    permit,
                     cancel: Some(cancel_tx),
                     done: done_rx,
                     requested_end: Arc::clone(&requested_end),
@@ -163,6 +158,36 @@ impl RingAudioSessions {
         })
     }
 
+    pub async fn reserve_relay(&self, device: String) -> Result<RelayReservation, BridgeError> {
+        let id = Uuid::new_v4();
+        let permit = self.gate.reserve(device, id).await?;
+        self.metrics.reserved();
+        Ok(RelayReservation {
+            id,
+            permit,
+            started_at: Instant::now(),
+        })
+    }
+
+    pub fn relay_started(&self) {
+        self.metrics.started(AudioMode::Talk, None);
+    }
+
+    pub async fn finish_relay(&self, reservation: RelayReservation, reason: SessionEndReason) {
+        self.gate.release(&reservation.permit).await;
+        let duration_ms =
+            u64::try_from(reservation.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.metrics.ended(reason, duration_ms);
+        tracing::info!(
+            session_id = %reservation.id,
+            mode = ?AudioMode::Talk,
+            reason = reason.as_str(),
+            duration_ms,
+            transport = "native_relay",
+            "Ring audio communication ended"
+        );
+    }
+
     pub async fn delete(&self, id: Uuid, reason: SessionEndReason) -> Result<(), BridgeError> {
         let (cancel, mut done) = {
             let mut state = self.state.lock().await;
@@ -194,16 +219,16 @@ impl RingAudioSessions {
         let runner = Arc::clone(&self.runner);
         let state = Arc::clone(&self.state);
         let metrics = Arc::clone(&self.metrics);
+        let gate = self.gate.clone();
         tokio::spawn(async move {
             let runner_reason = runner.run(task.offer, task.ready, task.cancel).await;
             let reason = requested_reason(&task.requested_end).unwrap_or(runner_reason);
             let mut state = state.lock().await;
-            if let Some(active) = state.active.remove(&task.id) {
-                state
-                    .cooldowns
-                    .insert(active.device, Instant::now() + SESSION_COOLDOWN);
-            }
+            let permit = state.active.remove(&task.id).map(|active| active.permit);
             drop(state);
+            if let Some(permit) = permit {
+                gate.release(&permit).await;
+            }
             let duration_ms =
                 u64::try_from(task.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
             metrics.ended(reason, duration_ms);
@@ -217,13 +242,6 @@ impl RingAudioSessions {
             let _ = task.done.send(true);
         });
     }
-}
-
-fn requested_reason(value: &AtomicUsize) -> Option<SessionEndReason> {
-    let raw = value.load(Ordering::Acquire);
-    raw.checked_sub(1)
-        .and_then(|index| SessionEndReason::ALL.get(index).copied())
-        .filter(|reason| reason.is_client())
 }
 
 #[cfg(test)]

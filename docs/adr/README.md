@@ -16,6 +16,7 @@
 | [0012](0012-native-status-and-controls.md) | Native Ring status and controls |
 | [0013](0013-session-observability.md) | Aggregate communication observability |
 | [0014](0014-local-vistoda-call-recording.md) | Local Vistoda call recording archive |
+| [0015](0015-native-apple-audio-relay.md) | Native Apple audio relay boundary |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.

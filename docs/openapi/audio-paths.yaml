@@ -1,0 +1,51 @@
+Sessions:
+  post:
+    operationId: createAudioSession
+    security: [{bearerAuth: []}]
+    parameters: [{$ref: "../../openapi.yaml#/components/parameters/DeviceAlias"}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "./schemas.yaml#/AudioSessionRequest"}
+    responses:
+      "201":
+        description: Bounded browser-to-Ring WebRTC session negotiated
+        content:
+          application/json:
+            schema: {$ref: "./schemas.yaml#/AudioSession"}
+      "400": {description: Offer violates the audio-only PCMU contract}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias}
+      "409": {description: This device already owns an active session}
+      "429": {description: Per-device post-session cooldown}
+      "502": {description: Ring signaling is unavailable}
+Session:
+  delete:
+    operationId: deleteAudioSession
+    security: [{bearerAuth: []}]
+    parameters:
+      - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+      - name: session
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    responses:
+      "204": {description: Worker stopped, cooldown committed, or session absent}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias}
+Relay:
+  get:
+    operationId: relayNativeAudio
+    summary: Upgrade to the bounded native PCMU WebSocket protocol
+    description: >-
+      Authenticated WebSocket. Server binary messages are bounded raw PCMU
+      payloads. Client binary messages are exactly 160-byte, 20 ms PCMU frames.
+      Text messages follow vistoda.pcmu.v1. The bridge supplies silence when no
+      client microphone frame is available and closes after at most 120 seconds.
+    security: [{bearerAuth: []}]
+    parameters: [{$ref: "../../openapi.yaml#/components/parameters/DeviceAlias"}]
+    responses:
+      "101": {description: Native audio relay upgraded}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias}
