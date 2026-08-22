@@ -15,6 +15,7 @@ use crate::{
 const FIRST_POLL_DELAY: Duration = Duration::from_secs(15);
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const POLL_ATTEMPTS: usize = 36;
+const MAX_JOB_HISTORY: usize = 128;
 
 pub struct RingRecordings {
     session_file: PathBuf,
@@ -106,9 +107,14 @@ impl RingRecordings {
                 (RecordingImportState::Failed, None)
             }
         };
-        if let Some(current) = self.jobs.lock().await.get_mut(&job.import_id) {
-            current.state = state;
-            current.recording_id = recording_id;
+        {
+            let mut jobs = self.jobs.lock().await;
+            if let Some(current) = jobs.get_mut(&job.import_id) {
+                current.state = state;
+                current.recording_id = recording_id;
+            }
+            trim_job_history(&mut jobs, job.import_id);
+            drop(jobs);
         }
         *self.active.lock().await = false;
     }
@@ -154,5 +160,38 @@ fn completed_import(triggered_at: i64, recording_id: Uuid) -> RecordingImport {
         triggered_at,
         state: RecordingImportState::Complete,
         recording_id: Some(recording_id),
+    }
+}
+
+fn trim_job_history(jobs: &mut BTreeMap<Uuid, RecordingImport>, current: Uuid) {
+    let remove = jobs.len().saturating_sub(MAX_JOB_HISTORY);
+    let stale = jobs
+        .iter()
+        .filter(|(id, job)| **id != current && job.state != RecordingImportState::Pending)
+        .map(|(id, _)| *id)
+        .take(remove)
+        .collect::<Vec<_>>();
+    for id in stale {
+        jobs.remove(&id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completed_job_history_is_bounded_and_keeps_the_current_result() {
+        let current = Uuid::new_v4();
+        let mut jobs = (0..=MAX_JOB_HISTORY)
+            .map(|_| {
+                let id = Uuid::new_v4();
+                (id, completed_import(0, Uuid::new_v4()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        jobs.insert(current, completed_import(500, Uuid::new_v4()));
+        trim_job_history(&mut jobs, current);
+        assert_eq!(jobs.len(), MAX_JOB_HISTORY);
+        assert!(jobs.contains_key(&current));
     }
 }

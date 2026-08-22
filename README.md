@@ -49,6 +49,7 @@ change access-control behaviour.
 | `POST /v1/devices/{alias}/audio/sessions` | negotiate bounded WebRTC audio | bearer |
 | `DELETE /v1/devices/{alias}/audio/sessions/{id}` | end audio after local teardown, idempotently | bearer |
 | `POST /v1/devices/{alias}/recording-imports` | queue a recent ding's official recording | bearer |
+| `GET /v1/devices/{alias}/recording-imports/{id}` | read bounded import status | bearer |
 | `GET /v1/devices/{alias}/recordings` | list private archive metadata | bearer |
 | `GET /v1/devices/{alias}/recordings/{id}` | read one bounded MP4 | bearer |
 | `DELETE /v1/devices/{alias}/recordings/{id}` | acknowledge and remove, idempotently | bearer |
@@ -60,6 +61,8 @@ Imports wait for Ring to finalize the answered call and never start a competing
 WebRTC session. Call Recording must already be enabled in Ring Privacy Settings;
 the bridge does not suppress Ring's spoken recording notice. Files are atomic,
 private, retained for 30 days and capped to 512 MiB total.
+Completed import-job status stays in a bounded 128-item in-memory window; the
+durable archive has independent retention and size limits.
 
 See [`openapi.yaml`](openapi.yaml). Browsers must use an authenticated backend
 proxy; they never receive the bridge token.
