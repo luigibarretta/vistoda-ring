@@ -5,10 +5,11 @@ Assistant and SceneTrove.
 
 ## Current status
 
-Version `0.4.x` exposes a bounded, authenticated WebRTC signaling API after the
+Version `0.5.x` exposes a bounded, authenticated WebRTC signaling API after the
 owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
-does not open the door or expose a public listener. It can privately archive
-official Ring call recordings after a Home Assistant ding trigger.
+adds native battery/status, volume and one-shot unlock contracts without a
+public listener. It can privately archive official Ring call recordings after
+a Home Assistant ding or answered communication trigger.
 An authenticated, rate-limited enrollment API can create the dedicated
 session through Ring's normal password and SMS-MFA flow; retained pending
 password state is zeroizing and credentials are never written to configuration.
@@ -17,10 +18,9 @@ bounded audio canary; neither is invoked by the service. HTTP sessions accept
 one fully gathered, audio-only PCMU offer, keep signaling alive for at most two
 minutes and close idempotently. The consumer peer carries media directly.
 
-The official Ring application provides two-way audio for Intercom Audio, while
-the public Home Assistant integration and the major unofficial clients expose
-only events, volume, battery and unlock operations. Protocol research is kept
-behind explicit ADR gates instead of being mixed into the HTTP service.
+The official Ring application provides two-way audio for Intercom Audio. The
+bridge combines that media path with bounded native status and control calls;
+protocol research stays behind explicit ADR gates.
 
 ## Architecture
 
@@ -32,9 +32,10 @@ Ring cloud (future, bounded) -> Rust provider -> session/media boundary
 Static config -> authenticated capability API -> consumers
 ```
 
-The existing Home Assistant Ring integration remains the owner of ding events
-and door unlock. This bridge is scoped only to media, so it cannot accidentally
-change access-control behaviour.
+Home Assistant may switch controls between its official Ring integration and
+the native bridge. Unlock is a one-shot command and is never retried by either
+consumer or bridge. Ding and unlock push events remain delegated during the
+native event-stream migration.
 
 ## API
 
@@ -43,6 +44,9 @@ change access-control behaviour.
 | `GET /healthz` | liveness, version and research phase | none |
 | `GET /v1/devices` | alias-only inventory and capabilities | bearer |
 | `GET /v1/devices/{alias}/capabilities` | verified media capability set | bearer |
+| `GET /v1/devices/{alias}/status` | battery, online state, volumes and latest activity | bearer |
+| `POST /v1/devices/{alias}/unlock` | one-shot native door unlock | bearer |
+| `PATCH /v1/devices/{alias}/settings` | set exactly one bounded volume | bearer |
 | `POST /v1/enrollments` | start an explicit password/MFA enrollment | bearer |
 | `POST /v1/enrollments/{id}` | consume one SMS code and persist the session | bearer |
 | `DELETE /v1/enrollments/{id}` | idempotently discard pending secrets | bearer |
@@ -53,6 +57,7 @@ change access-control behaviour.
 | `GET /v1/devices/{alias}/recordings` | list private archive metadata | bearer |
 | `GET /v1/devices/{alias}/recordings/{id}` | read one bounded MP4 | bearer |
 | `DELETE /v1/devices/{alias}/recordings/{id}` | acknowledge and remove, idempotently | bearer |
+| `GET /metrics` | aggregate session counters and latency histograms | none, private network |
 
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.

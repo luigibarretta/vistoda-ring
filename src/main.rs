@@ -3,8 +3,8 @@ use std::{path::PathBuf, sync::Arc};
 use clap::{Parser, Subcommand};
 use ring_intercom_bridge::{
     BridgeConfig, Runtime, research::write_synthetic_discovery_fixture,
-    ring_api_canary::run_api_canary, ring_client::RingReadOnlyClient,
-    ring_media_canary::run_audio_canary, router,
+    ring_api_canary::run_api_canary, ring_client::RingClient, ring_media_canary::run_audio_canary,
+    router,
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             seconds,
         } => research_api_canary(bridge_url, api_token_file, seconds).await,
         Command::ResearchRecordings { session_file } => {
-            let client = RingReadOnlyClient::new(session_file)?;
+            let client = RingClient::new(session_file)?;
             println!(
                 "{}",
                 serde_json::to_string(&client.inspect_recordings().await?)?
@@ -108,7 +108,7 @@ async fn research_audio_canary(
     session_file: PathBuf,
     seconds: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = RingReadOnlyClient::new(session_file)?;
+    let client = RingClient::new(session_file)?;
     let grant = client.prepare_audio_call().await?;
     let evidence = run_audio_canary(grant, std::time::Duration::from_secs(seconds)).await?;
     let passed = evidence.passes_release_gate();
@@ -150,7 +150,7 @@ async fn research_discover(
     session_file: PathBuf,
     output: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let client = RingReadOnlyClient::new(session_file)?;
+    let client = RingClient::new(session_file)?;
     let devices = client.discover_intercoms().await?;
     write_synthetic_discovery_fixture(&output, devices.len())?;
     tracing::info!(

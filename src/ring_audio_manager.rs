@@ -1,4 +1,11 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use tokio::{
@@ -10,9 +17,12 @@ use uuid::Uuid;
 use crate::{
     BridgeError,
     ring_audio::{
-        AudioSessionCreated, AudioSessionRequest, NegotiatedAudio, SESSION_SECONDS, validate_offer,
+        AudioMode, AudioSessionCreated, AudioSessionRequest, NegotiatedAudio, SESSION_SECONDS,
+        SessionEndReason, validate_request,
     },
     ring_audio_worker::ProductionSessionRunner,
+    ring_metrics::RingMetrics,
+    ring_provider::RingProvider,
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(25);
@@ -23,6 +33,18 @@ struct ActiveSession {
     device: String,
     cancel: Option<oneshot::Sender<()>>,
     done: watch::Receiver<bool>,
+    requested_end: Arc<AtomicUsize>,
+}
+
+struct SessionTask {
+    id: Uuid,
+    mode: AudioMode,
+    started_at: Instant,
+    requested_end: Arc<AtomicUsize>,
+    offer: String,
+    ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
+    cancel: oneshot::Receiver<()>,
+    done: watch::Sender<bool>,
 }
 
 #[derive(Default)]
@@ -38,24 +60,31 @@ pub trait SessionRunner: Send + Sync {
         offer_sdp: String,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         cancel: oneshot::Receiver<()>,
-    );
+    ) -> SessionEndReason;
 }
 
 #[derive(Clone)]
 pub struct RingAudioSessions {
     state: Arc<Mutex<SessionState>>,
     runner: Arc<dyn SessionRunner>,
+    metrics: Arc<RingMetrics>,
 }
 
 impl RingAudioSessions {
-    pub fn production(session_file: PathBuf) -> Self {
-        Self::new(Arc::new(ProductionSessionRunner::new(session_file)))
+    pub fn production(provider: Arc<RingProvider>, metrics: Arc<RingMetrics>) -> Self {
+        Self::build(Arc::new(ProductionSessionRunner::new(provider)), metrics)
     }
 
+    #[cfg(test)]
     pub(crate) fn new(runner: Arc<dyn SessionRunner>) -> Self {
+        Self::build(runner, Arc::new(RingMetrics::default()))
+    }
+
+    fn build(runner: Arc<dyn SessionRunner>, metrics: Arc<RingMetrics>) -> Self {
         Self {
             state: Arc::new(Mutex::new(SessionState::default())),
             runner,
+            metrics,
         }
     }
 
@@ -64,11 +93,13 @@ impl RingAudioSessions {
         device: String,
         request: AudioSessionRequest,
     ) -> Result<AudioSessionCreated, BridgeError> {
-        validate_offer(&request.offer_sdp)?;
+        validate_request(&request)?;
         let id = Uuid::new_v4();
+        let started_at = Instant::now();
         let (cancel_tx, cancel_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = oneshot::channel();
         let (done_tx, done_rx) = watch::channel(false);
+        let requested_end = Arc::new(AtomicUsize::new(0));
         {
             let mut state = self.state.lock().await;
             state
@@ -90,21 +121,39 @@ impl RingAudioSessions {
                     device,
                     cancel: Some(cancel_tx),
                     done: done_rx,
+                    requested_end: Arc::clone(&requested_end),
                 },
             );
         }
-        self.spawn(id, request.offer_sdp, ready_tx, cancel_rx, done_tx);
+        self.metrics.reserved();
+        self.spawn(SessionTask {
+            id,
+            mode: request.mode,
+            started_at,
+            requested_end,
+            offer: request.offer_sdp,
+            ready: ready_tx,
+            cancel: cancel_rx,
+            done: done_tx,
+        });
         let negotiated = match tokio::time::timeout(START_TIMEOUT, ready_rx).await {
             Ok(Ok(Ok(value))) => value,
             Ok(Ok(Err(error))) => {
-                let _ = self.delete(id).await;
+                let _ = self.delete(id, SessionEndReason::StartFailed).await;
                 return Err(error);
             }
             Ok(Err(_)) | Err(_) => {
-                let _ = self.delete(id).await;
+                let _ = self.delete(id, SessionEndReason::StartFailed).await;
                 return Err(BridgeError::UpstreamUnavailable);
             }
         };
+        self.metrics.started(request.mode, request.ice_gathering_ms);
+        tracing::info!(
+            session_id = %id,
+            mode = ?request.mode,
+            ice_gathering_ms = request.ice_gathering_ms,
+            "Ring audio communication started"
+        );
         Ok(AudioSessionCreated {
             session_id: id.to_string(),
             answer_sdp: negotiated.answer_sdp,
@@ -114,13 +163,15 @@ impl RingAudioSessions {
         })
     }
 
-    pub async fn delete(&self, id: Uuid) -> Result<(), BridgeError> {
+    pub async fn delete(&self, id: Uuid, reason: SessionEndReason) -> Result<(), BridgeError> {
         let (cancel, mut done) = {
             let mut state = self.state.lock().await;
-            let result = state
-                .active
-                .get_mut(&id)
-                .map(|active| (active.cancel.take(), active.done.clone()));
+            let result = state.active.get_mut(&id).map(|active| {
+                active
+                    .requested_end
+                    .store(reason as usize + 1, Ordering::Release);
+                (active.cancel.take(), active.done.clone())
+            });
             drop(state);
             let Some(result) = result else {
                 return Ok(());
@@ -139,28 +190,40 @@ impl RingAudioSessions {
         Ok(())
     }
 
-    fn spawn(
-        &self,
-        id: Uuid,
-        offer: String,
-        ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
-        cancel: oneshot::Receiver<()>,
-        done: watch::Sender<bool>,
-    ) {
+    fn spawn(&self, task: SessionTask) {
         let runner = Arc::clone(&self.runner);
         let state = Arc::clone(&self.state);
+        let metrics = Arc::clone(&self.metrics);
         tokio::spawn(async move {
-            runner.run(offer, ready, cancel).await;
+            let runner_reason = runner.run(task.offer, task.ready, task.cancel).await;
+            let reason = requested_reason(&task.requested_end).unwrap_or(runner_reason);
             let mut state = state.lock().await;
-            if let Some(active) = state.active.remove(&id) {
+            if let Some(active) = state.active.remove(&task.id) {
                 state
                     .cooldowns
                     .insert(active.device, Instant::now() + SESSION_COOLDOWN);
             }
             drop(state);
-            let _ = done.send(true);
+            let duration_ms =
+                u64::try_from(task.started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+            metrics.ended(reason, duration_ms);
+            tracing::info!(
+                session_id = %task.id,
+                mode = ?task.mode,
+                reason = reason.as_str(),
+                duration_ms,
+                "Ring audio communication ended"
+            );
+            let _ = task.done.send(true);
         });
     }
+}
+
+fn requested_reason(value: &AtomicUsize) -> Option<SessionEndReason> {
+    let raw = value.load(Ordering::Acquire);
+    raw.checked_sub(1)
+        .and_then(|index| SessionEndReason::ALL.get(index).copied())
+        .filter(|reason| reason.is_client())
 }
 
 #[cfg(test)]

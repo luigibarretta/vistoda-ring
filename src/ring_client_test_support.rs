@@ -19,7 +19,10 @@ use serde_json::{Value, json};
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
-use super::super::{Endpoints, RingReadOnlyClient};
+use super::super::{Endpoints, RingClient};
+
+#[path = "ring_client_test_controls.rs"]
+mod controls;
 
 const HARDWARE_ID: &str = "846f72e4-6b44-46a1-b3f5-5e8054486327";
 const REFRESH_A: &str = "synthetic_refresh_token_a_1234567890abcdef";
@@ -36,10 +39,11 @@ pub struct MockState {
     pub first_discovery_unauthorized: bool,
     pub reject_oauth: bool,
     pub rate_limit_discovery: bool,
+    pub control_calls: AtomicUsize,
 }
 
 pub struct TestHarness {
-    pub client: RingReadOnlyClient,
+    pub client: RingClient,
     pub session_path: PathBuf,
     task: tokio::task::JoinHandle<()>,
     _directory: TempDir,
@@ -57,6 +61,7 @@ pub async fn test_client(state: Arc<MockState>) -> TestHarness {
         .route("/session", post(register_session))
         .route("/devices", get(discover))
         .route("/locations/loc-1/devices/42/events", get(events))
+        .merge(controls::routes())
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -80,8 +85,9 @@ pub async fn test_client(state: Arc<MockState>) -> TestHarness {
         session: format!("{base}/session"),
         discovery: format!("{base}/devices"),
         client_api: base,
+        api_root: format!("http://{address}"),
     };
-    let client = RingReadOnlyClient::build(session_path.clone(), endpoints, false)
+    let client = RingClient::build(session_path.clone(), endpoints, false)
         .unwrap_or_else(|error| panic!("client setup failed: {error}"));
     TestHarness {
         client,
@@ -163,7 +169,9 @@ async fn discover(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Re
     Json(json!({
         "other": [
             {"id": 42, "kind": "intercom_handset_audio", "description": "Synthetic Entrance Intercom",
-             "location_id": "loc-1", "settings": {"recording_enabled": true},
+             "location_id": "loc-1", "battery_life": "73", "alerts": {"connection": "online"},
+             "settings": {"recording_enabled": true, "doorbell_volume": 6,
+                          "mic_volume": 10, "voice_volume": 9},
              "features": {"show_recordings": true}},
             {"id": 43, "kind": "third_party_garage_door_opener", "description": "Synthetic Other"}
         ]
@@ -184,7 +192,7 @@ async fn events(headers: HeaderMap) -> Response {
     .into_response()
 }
 
-fn valid_bearer(headers: &HeaderMap) -> bool {
+pub(super) fn valid_bearer(headers: &HeaderMap) -> bool {
     matches!(
         headers.get("authorization").and_then(|value| value.to_str().ok()),
         Some(value) if value == format!("Bearer {ACCESS_A}") || value == format!("Bearer {ACCESS_B}")

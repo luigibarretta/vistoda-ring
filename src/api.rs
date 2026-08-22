@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     routing::{delete, get, post},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 
 use crate::{
@@ -14,12 +14,14 @@ use crate::{
     config::BridgeConfig,
     error::BridgeError,
     model::{DeviceSummary, MediaCapabilities},
-    ring_audio::{AudioSessionCreated, AudioSessionRequest},
+    ring_audio::{AudioSessionCreated, AudioSessionRequest, SessionEndReason},
     ring_audio_manager::RingAudioSessions,
     ring_enrollment::{
         EnrollmentStart, EnrollmentStarted, EnrollmentVerified, RingEnrollmentManager,
         VerifyEnrollment,
     },
+    ring_metrics::RingMetrics,
+    ring_provider::RingProvider,
     ring_recording_manager::RingRecordings,
 };
 
@@ -28,19 +30,25 @@ pub struct Runtime {
     enrollment: RingEnrollmentManager,
     audio: RingAudioSessions,
     pub(crate) recordings: Arc<RingRecordings>,
+    metrics: Arc<RingMetrics>,
+    pub(crate) provider: Arc<RingProvider>,
 }
 
 impl Runtime {
     pub fn new(config: BridgeConfig) -> Result<Self, BridgeError> {
         let enrollment = RingEnrollmentManager::production(config.session_file.clone())?;
-        let audio = RingAudioSessions::production(config.session_file.clone());
+        let provider = Arc::new(RingProvider::new(config.session_file.clone()));
+        let metrics = Arc::new(RingMetrics::default());
+        let audio = RingAudioSessions::production(Arc::clone(&provider), Arc::clone(&metrics));
         let recordings =
-            RingRecordings::production(config.session_file.clone(), config.recording_dir.clone())?;
+            RingRecordings::production(Arc::clone(&provider), config.recording_dir.clone())?;
         Ok(Self {
             config,
             enrollment,
             audio,
             recordings,
+            metrics,
+            provider,
         })
     }
 }
@@ -60,6 +68,7 @@ struct DeviceList {
 pub fn router(runtime: Arc<Runtime>) -> Router {
     Router::new()
         .route("/healthz", get(health))
+        .route("/metrics", get(prometheus_metrics))
         .route("/v1/devices", get(devices))
         .route("/v1/enrollments", post(start_enrollment))
         .route(
@@ -75,6 +84,7 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
             "/v1/devices/{device}/audio/sessions/{session}",
             delete(delete_audio_session),
         )
+        .merge(crate::ring_control_api::routes())
         .merge(crate::ring_recording_api::routes())
         .layer(TraceLayer::new_for_http())
         .with_state(runtime)
@@ -115,6 +125,18 @@ async fn health() -> Json<Health<'static>> {
         phase: "verified",
         version: env!("CARGO_PKG_VERSION"),
     })
+}
+
+async fn prometheus_metrics(
+    State(runtime): State<Arc<Runtime>>,
+) -> impl axum::response::IntoResponse {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        runtime.metrics.render(),
+    )
 }
 
 async fn devices(
@@ -164,14 +186,27 @@ async fn start_audio_session(
 async fn delete_audio_session(
     State(runtime): State<Arc<Runtime>>,
     Path((device, session)): Path<(String, String)>,
+    Query(query): Query<DeleteAudioQuery>,
     headers: HeaderMap,
 ) -> Result<StatusCode, BridgeError> {
     require_bearer(&headers, &runtime.config.api_token)?;
     if !runtime.config.devices.contains_key(&device) {
         return Err(BridgeError::DeviceNotFound);
     }
+    let reason = query.reason.unwrap_or(SessionEndReason::UserStop);
+    if !reason.is_client() {
+        return Err(BridgeError::InvalidRequest(
+            "invalid client stop reason".into(),
+        ));
+    }
     if let Ok(id) = uuid::Uuid::parse_str(&session) {
-        runtime.audio.delete(id).await?;
+        runtime.audio.delete(id, reason).await?;
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DeleteAudioQuery {
+    reason: Option<SessionEndReason>,
 }

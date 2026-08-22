@@ -10,7 +10,7 @@ use uuid::Uuid;
 use super::{RingAudioSessions, SessionRunner};
 use crate::{
     BridgeError,
-    ring_audio::{AudioMode, AudioSessionRequest, IceCandidate, NegotiatedAudio},
+    ring_audio::{AudioMode, AudioSessionRequest, IceCandidate, NegotiatedAudio, SessionEndReason},
 };
 
 const OFFER: &str = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 0\r\na=sendrecv\r\n";
@@ -26,7 +26,7 @@ impl SessionRunner for FakeRunner {
         _offer_sdp: String,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         cancel: oneshot::Receiver<()>,
-    ) {
+    ) -> SessionEndReason {
         let _ = ready.send(Ok(NegotiatedAudio {
             answer_sdp: "v=0\r\nm=audio 9 RTP/AVP 0\r\na=sendrecv\r\n".into(),
             ice_candidates: vec![IceCandidate {
@@ -35,6 +35,7 @@ impl SessionRunner for FakeRunner {
             }],
         }));
         let _ = cancel.await;
+        SessionEndReason::UserStop
     }
 }
 
@@ -45,7 +46,7 @@ impl SessionRunner for DelayedStopRunner {
         _offer_sdp: String,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         cancel: oneshot::Receiver<()>,
-    ) {
+    ) -> SessionEndReason {
         let _ = ready.send(Ok(NegotiatedAudio {
             answer_sdp: "v=0\r\nm=audio 9 RTP/AVP 0\r\na=sendrecv\r\n".into(),
             ice_candidates: vec![],
@@ -53,6 +54,7 @@ impl SessionRunner for DelayedStopRunner {
         let _ = cancel.await;
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         self.0.store(true, Ordering::SeqCst);
+        SessionEndReason::UserStop
     }
 }
 
@@ -60,6 +62,7 @@ fn request() -> AudioSessionRequest {
     AudioSessionRequest {
         offer_sdp: OFFER.into(),
         mode: AudioMode::Listen,
+        ice_gathering_ms: Some(250),
     }
 }
 
@@ -74,11 +77,11 @@ async fn one_device_session_is_exclusive_and_delete_is_idempotent() {
     let id = Uuid::parse_str(&created.session_id)
         .unwrap_or_else(|error| panic!("session id failed: {error}"));
     sessions
-        .delete(id)
+        .delete(id, SessionEndReason::UserStop)
         .await
         .unwrap_or_else(|error| panic!("first delete failed: {error}"));
     sessions
-        .delete(id)
+        .delete(id, SessionEndReason::UserStop)
         .await
         .unwrap_or_else(|error| panic!("idempotent delete failed: {error}"));
     tokio::task::yield_now().await;
@@ -106,7 +109,7 @@ async fn delete_ack_waits_for_worker_teardown() {
     let id = Uuid::parse_str(&created.session_id)
         .unwrap_or_else(|error| panic!("session id failed: {error}"));
     sessions
-        .delete(id)
+        .delete(id, SessionEndReason::UserStop)
         .await
         .unwrap_or_else(|error| panic!("delete failed: {error}"));
     assert!(stopped.load(Ordering::SeqCst));

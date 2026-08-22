@@ -17,6 +17,65 @@ pub enum AudioMode {
 pub struct AudioSessionRequest {
     pub offer_sdp: String,
     pub mode: AudioMode,
+    #[serde(default)]
+    pub ice_gathering_ms: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(usize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionEndReason {
+    UserStop,
+    PanelClosed,
+    ClientExpired,
+    ConnectionEnded,
+    StartFailed,
+    RemoteClosed,
+    SignalingFailed,
+    LifetimeExpired,
+    StartupFailed,
+}
+
+impl SessionEndReason {
+    pub const ALL: [Self; 9] = [
+        Self::UserStop,
+        Self::PanelClosed,
+        Self::ClientExpired,
+        Self::ConnectionEnded,
+        Self::StartFailed,
+        Self::RemoteClosed,
+        Self::SignalingFailed,
+        Self::LifetimeExpired,
+        Self::StartupFailed,
+    ];
+    pub const COUNT: usize = Self::ALL.len();
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::UserStop => "user_stop",
+            Self::PanelClosed => "panel_closed",
+            Self::ClientExpired => "client_expired",
+            Self::ConnectionEnded => "connection_ended",
+            Self::StartFailed => "start_failed",
+            Self::RemoteClosed => "remote_closed",
+            Self::SignalingFailed => "signaling_failed",
+            Self::LifetimeExpired => "lifetime_expired",
+            Self::StartupFailed => "startup_failed",
+        }
+    }
+
+    #[must_use]
+    pub const fn is_client(self) -> bool {
+        matches!(
+            self,
+            Self::UserStop
+                | Self::PanelClosed
+                | Self::ClientExpired
+                | Self::ConnectionEnded
+                | Self::StartFailed
+        )
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -68,6 +127,14 @@ pub fn validate_offer(sdp: &str) -> Result<(), BridgeError> {
     }
     if !audio_direction(sdp, "a=sendrecv") {
         return Err(invalid("SDP audio must be sendrecv"));
+    }
+    Ok(())
+}
+
+pub fn validate_request(request: &AudioSessionRequest) -> Result<(), BridgeError> {
+    validate_offer(&request.offer_sdp)?;
+    if request.ice_gathering_ms.is_some_and(|value| value > 60_000) {
+        return Err(invalid("ICE gathering duration exceeds the limit"));
     }
     Ok(())
 }

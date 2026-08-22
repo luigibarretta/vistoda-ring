@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     error::BridgeError,
-    ring_client::RingReadOnlyClient,
+    ring_provider::RingProvider,
     ring_recording::{
         RecordingImport, RecordingImportRequest, RecordingImportState, RecordingItem,
     },
@@ -18,16 +18,19 @@ const POLL_ATTEMPTS: usize = 36;
 const MAX_JOB_HISTORY: usize = 128;
 
 pub struct RingRecordings {
-    session_file: PathBuf,
+    provider: Arc<RingProvider>,
     store: RecordingStore,
     jobs: Mutex<BTreeMap<Uuid, RecordingImport>>,
     active: Mutex<bool>,
 }
 
 impl RingRecordings {
-    pub fn production(session_file: PathBuf, root: PathBuf) -> Result<Arc<Self>, BridgeError> {
+    pub fn production(
+        provider: Arc<RingProvider>,
+        root: PathBuf,
+    ) -> Result<Arc<Self>, BridgeError> {
         Ok(Arc::new(Self {
-            session_file,
+            provider,
             store: RecordingStore::new(root)?,
             jobs: Mutex::new(BTreeMap::new()),
             active: Mutex::new(false),
@@ -123,7 +126,7 @@ impl RingRecordings {
         &self,
         job: &RecordingImport,
     ) -> Result<Option<RecordingItem>, BridgeError> {
-        let client = RingReadOnlyClient::new(self.session_file.clone())?;
+        let client = self.provider.client().await?;
         for attempt in 0..POLL_ATTEMPTS {
             if let Some(source) = client.find_recording_since(job.triggered_at).await? {
                 let media = client.download_recording(&source).await?;

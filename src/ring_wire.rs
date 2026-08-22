@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use serde::Deserialize;
+use serde_json::Value;
 use zeroize::Zeroizing;
 
 use crate::error::BridgeError;
@@ -42,6 +43,10 @@ struct RawDevice {
     settings: RawSettings,
     #[serde(default)]
     features: RawFeatures,
+    #[serde(default)]
+    battery_life: Option<Value>,
+    #[serde(default)]
+    alerts: RawAlerts,
 }
 
 pub struct RingIntercomIdentity {
@@ -50,6 +55,11 @@ pub struct RingIntercomIdentity {
     location_id: Option<String>,
     recording_enabled: bool,
     recordings_visible: bool,
+    battery: Option<u8>,
+    online: bool,
+    doorbell_volume: Option<u8>,
+    mic_volume: Option<u8>,
+    voice_volume: Option<u8>,
 }
 
 #[derive(Default, Deserialize)]
@@ -58,6 +68,18 @@ struct RawSettings {
     recording_enabled: bool,
     #[serde(default)]
     show_recordings: bool,
+    #[serde(default)]
+    doorbell_volume: Option<u8>,
+    #[serde(default)]
+    mic_volume: Option<u8>,
+    #[serde(default)]
+    voice_volume: Option<u8>,
+}
+
+#[derive(Default, Deserialize)]
+struct RawAlerts {
+    #[serde(default)]
+    connection: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -90,6 +112,21 @@ impl RingIntercomIdentity {
     #[must_use]
     pub const fn recordings_visible(&self) -> bool {
         self.recordings_visible
+    }
+
+    #[must_use]
+    pub const fn battery(&self) -> Option<u8> {
+        self.battery
+    }
+
+    #[must_use]
+    pub const fn online(&self) -> bool {
+        self.online
+    }
+
+    #[must_use]
+    pub const fn volumes(&self) -> (Option<u8>, Option<u8>, Option<u8>) {
+        (self.doorbell_volume, self.mic_volume, self.voice_volume)
     }
 }
 
@@ -126,15 +163,50 @@ pub fn parse_devices(input: &[u8]) -> Result<Vec<RingIntercomIdentity>, BridgeEr
                 "invalid Ring Intercom identity".into(),
             ));
         }
+        let battery = parse_battery(device.battery_life.as_ref())?;
+        for value in [
+            device.settings.doorbell_volume,
+            device.settings.mic_volume,
+            device.settings.voice_volume,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if value > 11 {
+                return Err(BridgeError::Protocol("invalid Ring volume".into()));
+            }
+        }
         intercoms.push(RingIntercomIdentity {
             id: device.id,
             description: device.description,
             location_id: device.location_id,
             recording_enabled: device.settings.recording_enabled,
             recordings_visible: device.settings.show_recordings || device.features.show_recordings,
+            battery,
+            online: device.alerts.connection.as_deref() != Some("offline"),
+            doorbell_volume: device.settings.doorbell_volume,
+            mic_volume: device.settings.mic_volume,
+            voice_volume: device.settings.voice_volume,
         });
     }
     Ok(intercoms)
+}
+
+fn parse_battery(value: Option<&Value>) -> Result<Option<u8>, BridgeError> {
+    let parsed = match value {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::Number(number)) => number.as_u64(),
+        Some(Value::String(text)) => text.parse::<u64>().ok(),
+        Some(_) => None,
+    };
+    match parsed {
+        Some(level) => {
+            Ok(Some(u8::try_from(level.min(100)).map_err(|_| {
+                BridgeError::Protocol("invalid Ring battery".into())
+            })?))
+        }
+        None => Err(BridgeError::Protocol("invalid Ring battery".into())),
+    }
 }
 
 pub fn parse_ticket(input: &[u8]) -> Result<Zeroizing<String>, BridgeError> {

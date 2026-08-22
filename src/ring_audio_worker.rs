@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use tokio::sync::oneshot;
@@ -6,9 +6,11 @@ use tokio::time::{Instant, interval_at};
 
 use crate::{
     BridgeError,
-    ring_audio::{IceCandidate, NegotiatedAudio, SESSION_SECONDS, validate_answer},
+    ring_audio::{
+        IceCandidate, NegotiatedAudio, SESSION_SECONDS, SessionEndReason, validate_answer,
+    },
     ring_audio_manager::SessionRunner,
-    ring_client::RingReadOnlyClient,
+    ring_provider::RingProvider,
     ring_signaling::{Incoming, Signaling},
 };
 
@@ -17,12 +19,12 @@ const ICE_SETTLE: Duration = Duration::from_millis(750);
 const MAX_ICE_CANDIDATES: usize = 64;
 
 pub struct ProductionSessionRunner {
-    session_file: PathBuf,
+    provider: Arc<RingProvider>,
 }
 
 impl ProductionSessionRunner {
-    pub const fn new(session_file: PathBuf) -> Self {
-        Self { session_file }
+    pub const fn new(provider: Arc<RingProvider>) -> Self {
+        Self { provider }
     }
 }
 
@@ -33,46 +35,53 @@ impl SessionRunner for ProductionSessionRunner {
         offer_sdp: String,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         mut cancel: oneshot::Receiver<()>,
-    ) {
+    ) -> SessionEndReason {
         let (mut signaling, negotiated) = match self.negotiate(&offer_sdp).await {
             Ok(value) => value,
             Err(error) => {
                 let _ = ready.send(Err(error));
-                return;
+                return SessionEndReason::StartupFailed;
             }
         };
         if ready.send(Ok(negotiated)).is_err() {
             let _ = signaling.close().await;
-            return;
+            return SessionEndReason::StartupFailed;
         }
         let deadline = Instant::now() + Duration::from_secs(SESSION_SECONDS);
         let mut pings = interval_at(
             Instant::now() + Duration::from_secs(5),
             Duration::from_secs(5),
         );
-        loop {
+        let reason = loop {
             tokio::select! {
-                _ = &mut cancel => break,
-                () = tokio::time::sleep_until(deadline) => break,
+                _ = &mut cancel => break SessionEndReason::UserStop,
+                () = tokio::time::sleep_until(deadline) => {
+                    break SessionEndReason::LifetimeExpired;
+                }
                 _ = pings.tick() => {
-                    if signaling.ping().await.is_err() { break }
+                    if signaling.ping().await.is_err() {
+                        break SessionEndReason::SignalingFailed;
+                    }
                 }
                 message = signaling.next() => {
                     match message {
-                        Ok(Some(Incoming::Close { .. }) | None) | Err(_) => break,
+                        Ok(Some(Incoming::Close { .. }) | None) => {
+                            break SessionEndReason::RemoteClosed;
+                        }
+                        Err(_) => break SessionEndReason::SignalingFailed,
                         Ok(Some(_)) => {}
                     }
                 }
             }
-        }
+        };
         let _ = signaling.close().await;
+        reason
     }
 }
 
 impl ProductionSessionRunner {
     async fn negotiate(&self, offer: &str) -> Result<(Signaling, NegotiatedAudio), BridgeError> {
-        let client = RingReadOnlyClient::new(self.session_file.clone())?;
-        let grant = client.prepare_audio_call().await?;
+        let grant = self.provider.client().await?.prepare_audio_call().await?;
         let mut signaling = Signaling::connect(&grant.ticket, grant.device_id).await?;
         signaling.offer(offer).await?;
         let negotiated = match self.collect(&mut signaling).await {

@@ -29,6 +29,7 @@ struct Endpoints {
     session: String,
     discovery: String,
     client_api: String,
+    api_root: String,
 }
 impl Endpoints {
     fn production() -> Self {
@@ -37,6 +38,7 @@ impl Endpoints {
             session: SESSION_ENDPOINT.into(),
             discovery: DISCOVERY_ENDPOINT.into(),
             client_api: CLIENT_API_ROOT.into(),
+            api_root: "https://api.ring.com".into(),
         }
     }
 }
@@ -50,13 +52,13 @@ struct ClientState {
     registered_until: Option<Instant>,
     rotation_pending: bool,
 }
-pub struct RingReadOnlyClient {
+pub struct RingClient {
     http: Client,
     endpoints: Endpoints,
     store: RingSessionStore,
     state: Mutex<ClientState>,
 }
-impl RingReadOnlyClient {
+impl RingClient {
     pub fn new(session_path: PathBuf) -> Result<Self, BridgeError> {
         Self::build(session_path, Endpoints::production(), true)
     }
@@ -86,7 +88,6 @@ impl RingReadOnlyClient {
             }),
         })
     }
-
     pub async fn discover_intercoms(&self) -> Result<Vec<RingIntercomIdentity>, BridgeError> {
         let mut state = self.state.lock().await;
         for attempt in 0..=1 {
@@ -209,7 +210,6 @@ impl RingReadOnlyClient {
         state.registered_until = Some(Instant::now() + SESSION_LIFETIME);
         Ok(())
     }
-
     async fn discovery_request(
         &self,
         state: &ClientState,
@@ -225,7 +225,6 @@ impl RingReadOnlyClient {
             .map_err(|error| BridgeError::Transport("device discovery", error))
     }
 }
-
 fn access_value(state: &ClientState) -> Result<&str, BridgeError> {
     state
         .access
@@ -233,16 +232,16 @@ fn access_value(state: &ClientState) -> Result<&str, BridgeError> {
         .map(|token| token.value.as_str())
         .ok_or_else(|| BridgeError::Protocol("access token is unavailable".into()))
 }
-
 fn invalidate_auth(state: &mut ClientState) {
     state.access = None;
     state.registered_until = None;
 }
-
 const fn is_unauthorized(error: &BridgeError) -> bool {
     matches!(error, BridgeError::VendorRejected { status: 401, .. })
 }
 
+#[path = "ring_control_provider.rs"]
+mod controls;
 #[path = "ring_recording_provider.rs"]
 mod recordings;
 #[cfg(test)]

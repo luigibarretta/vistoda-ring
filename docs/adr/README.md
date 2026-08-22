@@ -13,6 +13,8 @@
 | [0009](0009-ring-signalsocket-audio.md) | Proven Ring signalsocket audio protocol |
 | [0010](0010-consumer-webrtc-sessions.md) | Private consumer WebRTC session boundary |
 | [0011](0011-official-call-recording-import.md) | Official post-ding call recording import |
+| [0012](0012-native-status-and-controls.md) | Native Ring status and controls |
+| [0013](0013-session-observability.md) | Aggregate communication observability |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.

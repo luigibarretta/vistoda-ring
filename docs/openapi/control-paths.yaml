@@ -1,0 +1,55 @@
+Status:
+  get:
+    operationId: getRingStatus
+    security: [{bearerAuth: []}]
+    parameters: [{$ref: "../../openapi.yaml#/components/parameters/DeviceAlias"}]
+    responses:
+      "200":
+        description: Bounded native Ring Intercom state
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [battery, online, doorbell_volume, mic_volume, voice_volume, last_activity]
+              properties:
+                battery: {type: [integer, "null"], minimum: 0, maximum: 100}
+                online: {type: boolean}
+                doorbell_volume: {type: [integer, "null"], minimum: 0, maximum: 8}
+                mic_volume: {type: [integer, "null"], minimum: 0, maximum: 11}
+                voice_volume: {type: [integer, "null"], minimum: 0, maximum: 11}
+                last_activity: {type: [integer, "null"], minimum: 0}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias}
+Unlock:
+  post:
+    operationId: unlockRingIntercom
+    security: [{bearerAuth: []}]
+    parameters: [{$ref: "../../openapi.yaml#/components/parameters/DeviceAlias"}]
+    responses:
+      "204": {description: One Ring unlock command was accepted}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias}
+      "502": {description: Ring rejected or could not receive the command}
+Settings:
+  patch:
+    operationId: updateRingIntercomVolume
+    security: [{bearerAuth: []}]
+    parameters: [{$ref: "../../openapi.yaml#/components/parameters/DeviceAlias"}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            minProperties: 1
+            maxProperties: 1
+            properties:
+              doorbell_volume: {type: integer, minimum: 0, maximum: 8}
+              mic_volume: {type: integer, minimum: 0, maximum: 11}
+              voice_volume: {type: integer, minimum: 0, maximum: 11}
+    responses:
+      "204": {description: Exactly one volume was updated}
+      "400": {description: Missing, multiple or out-of-range volume}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias}

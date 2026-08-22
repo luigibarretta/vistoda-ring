@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.4.0
+  version: 0.5.0
   description: >-
     Private control-plane and bounded WebRTC signaling contract for Ring
     Intercom Audio. The bridge never exposes vendor or bridge credentials.
@@ -18,6 +18,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+  /metrics:
+    get:
+      operationId: prometheusMetrics
+      responses:
+        "200":
+          description: Aggregate communication lifecycle and latency metrics
+          content:
+            text/plain:
+              schema: {type: string}
   /v1/devices:
     get:
       operationId: listDevices
@@ -161,6 +170,12 @@ paths:
           description: Per-device post-session cooldown
         "502":
           description: Ring signaling is unavailable
+  /v1/devices/{device}/status:
+    $ref: "./docs/openapi/control-paths.yaml#/Status"
+  /v1/devices/{device}/unlock:
+    $ref: "./docs/openapi/control-paths.yaml#/Unlock"
+  /v1/devices/{device}/settings:
+    $ref: "./docs/openapi/control-paths.yaml#/Settings"
   /v1/devices/{device}/audio/sessions/{session}:
     delete:
       operationId: deleteAudioSession

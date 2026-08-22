@@ -1,4 +1,4 @@
-use super::{AudioMode, AudioSessionRequest, validate_offer};
+use super::{AudioMode, AudioSessionRequest, validate_offer, validate_request};
 
 const OFFER: &str = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 0 111\r\na=sendrecv\r\n";
 
@@ -28,4 +28,14 @@ fn request_does_not_accept_unknown_fields() {
     });
     assert!(serde_json::from_value::<AudioSessionRequest>(value).is_err());
     assert_eq!(AudioMode::Listen, AudioMode::Listen);
+}
+
+#[test]
+fn browser_ice_duration_is_bounded() {
+    let request = AudioSessionRequest {
+        offer_sdp: OFFER.into(),
+        mode: AudioMode::Listen,
+        ice_gathering_ms: Some(60_001),
+    };
+    assert!(validate_request(&request).is_err());
 }

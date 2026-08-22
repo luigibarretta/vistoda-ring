@@ -1,6 +1,6 @@
 use reqwest::Url;
 
-use super::RingReadOnlyClient;
+use super::RingClient;
 use crate::{
     error::BridgeError,
     ring_http::checked_body,
@@ -15,7 +15,16 @@ const EVENTS_LIMIT: usize = 512 * 1024;
 const URL_LIMIT: usize = 32 * 1024;
 const MEDIA_LIMIT: usize = 64 * 1024 * 1024;
 
-impl RingReadOnlyClient {
+impl RingClient {
+    pub(crate) async fn latest_activity(&self) -> Result<Option<i64>, BridgeError> {
+        let (_, events) = self.recording_context().await?;
+        events
+            .iter()
+            .map(|event| parse_created_at(&event.created_at))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|values| values.into_iter().max())
+    }
+
     pub async fn inspect_recordings(&self) -> Result<RecordingEvidence, BridgeError> {
         let (device, events) = self.recording_context().await?;
         Ok(RecordingEvidence {

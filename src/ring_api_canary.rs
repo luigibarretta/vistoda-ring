@@ -65,6 +65,7 @@ pub async fn run_api_canary(
         .json(&AudioSessionRequest {
             offer_sdp: offer,
             mode: AudioMode::Listen,
+            ice_gathering_ms: None,
         })
         .send()
         .await
