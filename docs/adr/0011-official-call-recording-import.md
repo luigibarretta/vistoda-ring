@@ -1,6 +1,6 @@
 # ADR 0011: Official call recording import
 
-- Status: accepted
+- Status: superseded by ADR 0014
 - Date: 2026-08-15
 
 ## Context

@@ -170,9 +170,7 @@ async fn discover(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Re
         "other": [
             {"id": 42, "kind": "intercom_handset_audio", "description": "Synthetic Entrance Intercom",
              "location_id": "loc-1", "battery_life": "73", "alerts": {"connection": "online"},
-             "settings": {"recording_enabled": true, "doorbell_volume": 6,
-                          "mic_volume": 10, "voice_volume": 9},
-             "features": {"show_recordings": true}},
+             "settings": {"doorbell_volume": 6, "mic_volume": 10, "voice_volume": 9}},
             {"id": 43, "kind": "third_party_garage_door_opener", "description": "Synthetic Other"}
         ]
     }))
@@ -185,9 +183,9 @@ async fn events(headers: HeaderMap) -> Response {
     }
     Json(json!({"events": [
         {"ding_id_str": "synthetic-1", "created_at": "2026-08-15T12:00:00Z",
-         "recording_status": "audio_ready", "state": "completed"},
+         "state": "completed"},
         {"ding_id_str": "synthetic-2", "created_at": "2026-08-15T12:05:00Z",
-         "recording_status": null, "state": "timed_out"}
+         "state": "timed_out"}
     ]}))
     .into_response()
 }

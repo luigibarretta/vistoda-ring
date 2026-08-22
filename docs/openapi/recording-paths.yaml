@@ -1,45 +1,34 @@
-RecordingImports:
+Recordings:
   post:
-    operationId: importRecording
+    operationId: uploadRecording
     security: [{bearerAuth: []}]
     parameters:
       - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+      - name: started_at
+        in: query
+        required: true
+        schema: {type: integer, format: int64}
+      - name: ended_at
+        in: query
+        required: true
+        schema: {type: integer, format: int64}
     requestBody:
       required: true
       content:
-        application/json:
-          schema:
-            $ref: "./schemas.yaml#/RecordingImportRequest"
+        audio/webm:
+          schema: {type: string, format: binary, minLength: 128, maxLength: 8388608}
+        audio/mp4:
+          schema: {type: string, format: binary, minLength: 128, maxLength: 8388608}
     responses:
-      "202":
-        description: Idempotent post-ding import queued
+      "201":
+        description: Locally captured Vistoda call committed atomically
         content:
           application/json:
             schema:
-              $ref: "./schemas.yaml#/RecordingImport"
-      "400": {description: Trigger timestamp is outside the one-hour window}
+              $ref: "./schemas.yaml#/RecordingItem"
+      "400": {description: Media or bounded timestamps are invalid}
       "401":
         $ref: "../../openapi.yaml#/components/responses/Unauthorized"
-      "409": {description: Another non-duplicate import is active}
-RecordingImportStatus:
-  get:
-    operationId: getRecordingImport
-    security: [{bearerAuth: []}]
-    parameters:
-      - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
-      - name: import
-        in: path
-        required: true
-        schema: {type: string, format: uuid}
-    responses:
-      "200":
-        description: Current asynchronous import state
-        content:
-          application/json:
-            schema:
-              $ref: "./schemas.yaml#/RecordingImport"
-      "404": {description: Import is absent}
-Recordings:
   get:
     operationId: listRecordings
     security: [{bearerAuth: []}]
@@ -64,9 +53,11 @@ Recording:
     security: [{bearerAuth: []}]
     responses:
       "200":
-        description: Bounded official Ring MP4 recording
+        description: Bounded locally captured Vistoda recording
         content:
           audio/mp4:
+            schema: {type: string, format: binary}
+          audio/webm:
             schema: {type: string, format: binary}
       "404": {description: Recording is absent}
   delete:

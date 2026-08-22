@@ -5,11 +5,11 @@ Assistant and SceneTrove.
 
 ## Current status
 
-Version `0.5.x` exposes a bounded, authenticated WebRTC signaling API after the
+Version `0.6.x` exposes a bounded, authenticated WebRTC signaling API after the
 owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
 adds native battery/status, volume and one-shot unlock contracts without a
-public listener. It can privately archive official Ring call recordings after
-a Home Assistant ding or answered communication trigger.
+public listener. It also archives audio captured by an active Vistoda browser
+session; it does not depend on a Ring cloud recording feature.
 An authenticated, rate-limited enrollment API can create the dedicated
 session through Ring's normal password and SMS-MFA flow; retained pending
 password state is zeroizing and credentials are never written to configuration.
@@ -25,9 +25,11 @@ protocol research stays behind explicit ADR gates.
 ## Architecture
 
 ```text
-Ring cloud (future, bounded) -> Rust provider -> session/media boundary
-                                                +-> WebRTC for HA browser
-                                                +-> receive-only audio for SceneTrove
+Ring cloud -> Rust provider -> session/media boundary
+                              +-> WebRTC for HA browser
+                              +-> receive-only audio for SceneTrove
+
+Vistoda browser -> authenticated HA proxy -> bounded private call archive
 
 Static config -> authenticated capability API -> consumers
 ```
@@ -52,22 +54,20 @@ native event-stream migration.
 | `DELETE /v1/enrollments/{id}` | idempotently discard pending secrets | bearer |
 | `POST /v1/devices/{alias}/audio/sessions` | negotiate bounded WebRTC audio | bearer |
 | `DELETE /v1/devices/{alias}/audio/sessions/{id}` | end audio after local teardown, idempotently | bearer |
-| `POST /v1/devices/{alias}/recording-imports` | queue a recent ding's official recording | bearer |
-| `GET /v1/devices/{alias}/recording-imports/{id}` | read bounded import status | bearer |
+| `POST /v1/devices/{alias}/recordings` | commit one bounded local WebM/MP4 call | bearer |
 | `GET /v1/devices/{alias}/recordings` | list private archive metadata | bearer |
-| `GET /v1/devices/{alias}/recordings/{id}` | read one bounded MP4 | bearer |
+| `GET /v1/devices/{alias}/recordings/{id}` | read one bounded WebM/MP4 | bearer |
 | `DELETE /v1/devices/{alias}/recordings/{id}` | acknowledge and remove, idempotently | bearer |
 | `GET /metrics` | aggregate session counters and latency histograms | none, private network |
 
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.
 
-Imports wait for Ring to finalize the answered call and never start a competing
-WebRTC session. Call Recording must already be enabled in Ring Privacy Settings;
-the bridge does not suppress Ring's spoken recording notice. Files are atomic,
-private, retained for 30 days and capped to 512 MiB total.
-Completed import-job status stays in a bounded 128-item in-memory window; the
-durable archive has independent retention and size limits.
+Recordings are produced only while a user-owned Vistoda WebRTC session is
+active. The browser mixes inbound audio and its microphone only when that
+microphone is explicitly enabled, then uploads through Home Assistant's
+authenticated backend proxy. Files are atomic, private, individually capped at
+8 MiB, retained for 30 days and capped to 512 MiB total.
 
 See [`openapi.yaml`](openapi.yaml). Browsers must use an authenticated backend
 proxy; they never receive the bridge token.

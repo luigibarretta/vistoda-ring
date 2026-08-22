@@ -16,6 +16,10 @@ use tower::ServiceExt;
 const TOKEN: &str = "01234567890123456789012345678901";
 
 fn app() -> axum::Router {
+    app_with_recordings(std::path::PathBuf::from("/data/recordings"))
+}
+
+fn app_with_recordings(recording_dir: std::path::PathBuf) -> axum::Router {
     let devices = BTreeMap::from([(
         "entrance".into(),
         DeviceConfig {
@@ -23,7 +27,8 @@ fn app() -> axum::Router {
         },
     )]);
     let config = BridgeConfig::new("127.0.0.1".into(), 8775, TOKEN.into(), devices)
-        .unwrap_or_else(|error| panic!("test configuration failed: {error}"));
+        .unwrap_or_else(|error| panic!("test configuration failed: {error}"))
+        .with_recording_dir(recording_dir);
     router(Arc::new(Runtime::new(config).unwrap_or_else(|error| {
         panic!("runtime setup failed: {error}")
     })))
@@ -213,15 +218,31 @@ async fn recording_delete_is_idempotent() {
 }
 
 #[tokio::test]
-async fn recording_import_rejects_stale_triggers_before_vendor_access() {
-    let request = Request::post("/v1/devices/entrance/recording-imports")
-        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(r#"{"triggered_at":1}"#))
-        .unwrap_or_else(|error| panic!("request failed: {error}"));
-    let response = app()
+async fn local_recording_upload_validates_and_archives_webm() {
+    let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir failed: {error}"));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let now = i64::try_from(now).unwrap_or(i64::MAX);
+    let mut media = vec![0_u8; 2048];
+    media[..4].copy_from_slice(&[0x1a, 0x45, 0xdf, 0xa3]);
+    let request = Request::post(format!(
+        "/v1/devices/entrance/recordings?started_at={}&ended_at={}",
+        now - 10,
+        now
+    ))
+    .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+    .header(header::CONTENT_TYPE, "audio/webm;codecs=opus")
+    .body(Body::from(media))
+    .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app_with_recordings(directory.path().join("recordings"))
         .oneshot(request)
         .await
         .unwrap_or_else(|error| panic!("router failed: {error}"));
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = json(response).await;
+    assert_eq!(body["media_type"], "audio/webm");
+    assert_eq!(body["started_at"], now - 10);
+    assert_eq!(body["ended_at"], now);
 }

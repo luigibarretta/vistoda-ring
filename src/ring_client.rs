@@ -242,8 +242,6 @@ const fn is_unauthorized(error: &BridgeError) -> bool {
 
 #[path = "ring_control_provider.rs"]
 mod controls;
-#[path = "ring_recording_provider.rs"]
-mod recordings;
 #[cfg(test)]
 #[path = "ring_client_tests.rs"]
 mod tests;

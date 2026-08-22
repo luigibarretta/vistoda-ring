@@ -40,8 +40,7 @@ impl Runtime {
         let provider = Arc::new(RingProvider::new(config.session_file.clone()));
         let metrics = Arc::new(RingMetrics::default());
         let audio = RingAudioSessions::production(Arc::clone(&provider), Arc::clone(&metrics));
-        let recordings =
-            RingRecordings::production(Arc::clone(&provider), config.recording_dir.clone())?;
+        let recordings = RingRecordings::production(config.recording_dir.clone())?;
         Ok(Self {
             config,
             enrollment,

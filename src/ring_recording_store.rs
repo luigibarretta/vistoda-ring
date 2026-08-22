@@ -4,9 +4,12 @@ use std::{fs, io::Write, path::PathBuf};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use uuid::Uuid;
 
-use crate::{error::BridgeError, ring_recording::RecordingItem};
+use crate::{
+    error::BridgeError,
+    ring_recording::RecordingItem,
+    ring_recording_media::{MAX_MEDIA_BYTES, RecordingMedia},
+};
 
-const MAX_MEDIA_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const RETENTION_SECONDS: i64 = 30 * 24 * 60 * 60;
 
@@ -24,26 +27,28 @@ impl RecordingStore {
 
     pub fn commit(
         &self,
-        triggered_at: i64,
-        event_at: i64,
+        started_at: i64,
+        ended_at: i64,
+        content_type: &str,
         media: &[u8],
     ) -> Result<RecordingItem, BridgeError> {
         self.ensure_root()?;
-        validate_media(media)?;
+        let kind = RecordingMedia::parse(content_type)?;
+        kind.validate(media)?;
         let id = Uuid::new_v4();
         let saved_at = now()?;
         let item = RecordingItem {
             recording_id: id,
-            triggered_at,
-            event_at,
+            started_at,
+            ended_at,
             saved_at,
             bytes: u64::try_from(media.len())
                 .map_err(|_| BridgeError::Protocol("recording is too large".into()))?,
-            media_type: "audio/mp4".into(),
+            media_type: kind.content_type().into(),
         };
-        self.atomic_write(&format!("{id}.mp4"), media)?;
+        self.atomic_write(&format!("{id}.{}", kind.extension()), media)?;
         if let Err(error) = self.atomic_write(&format!("{id}.json"), &serde_json::to_vec(&item)?) {
-            let _ignored = fs::remove_file(self.media_path(id));
+            let _ignored = fs::remove_file(self.media_path(id, kind));
             return Err(error);
         }
         self.cleanup(saved_at)?;
@@ -66,22 +71,20 @@ impl RecordingStore {
                 return Err(BridgeError::Protocol("recording manifest is unsafe".into()));
             }
             let item: RecordingItem = serde_json::from_slice(&fs::read(path)?)?;
-            if item.media_type != "audio/mp4" || item.bytes > MAX_MEDIA_BYTES as u64 {
-                return Err(BridgeError::Protocol(
-                    "recording manifest is invalid".into(),
-                ));
-            }
+            validate_item(&item)?;
             items.push(item);
         }
-        items.sort_by_key(|item| std::cmp::Reverse(item.event_at));
+        items.sort_by_key(|item| std::cmp::Reverse(item.ended_at));
         Ok(items)
     }
 
-    pub fn read(&self, id: Uuid) -> Result<Vec<u8>, BridgeError> {
+    pub fn read(&self, id: Uuid) -> Result<(String, Vec<u8>), BridgeError> {
         if !self.root.exists() {
             return Err(BridgeError::RecordingNotFound);
         }
-        let path = self.media_path(id);
+        let item = self.item(id)?;
+        let kind = RecordingMedia::parse(&item.media_type)?;
+        let path = self.media_path(id, kind);
         let metadata = fs::symlink_metadata(&path).map_err(not_found)?;
         if !metadata.is_file()
             || metadata.file_type().is_symlink()
@@ -90,23 +93,28 @@ impl RecordingStore {
             return Err(BridgeError::RecordingNotFound);
         }
         let media = fs::read(path)?;
-        validate_media(&media)?;
-        Ok(media)
+        kind.validate(&media)?;
+        Ok((item.media_type, media))
     }
 
     pub fn delete(&self, id: Uuid) -> Result<(), BridgeError> {
         if !self.root.exists() {
             return Ok(());
         }
-        remove_if_present(self.media_path(id))?;
+        remove_if_present(self.root.join(format!("{id}.mp4")))?;
+        remove_if_present(self.root.join(format!("{id}.webm")))?;
         remove_if_present(self.root.join(format!("{id}.json")))
     }
 
-    pub fn find_trigger(&self, triggered_at: i64) -> Result<Option<RecordingItem>, BridgeError> {
-        Ok(self
-            .list()?
-            .into_iter()
-            .find(|item| item.triggered_at.abs_diff(triggered_at) <= 5))
+    fn item(&self, id: Uuid) -> Result<RecordingItem, BridgeError> {
+        let path = self.root.join(format!("{id}.json"));
+        let metadata = fs::symlink_metadata(&path).map_err(not_found)?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 4096 {
+            return Err(BridgeError::RecordingNotFound);
+        }
+        let item = serde_json::from_slice::<RecordingItem>(&fs::read(path)?)?;
+        validate_item(&item)?;
+        Ok(item)
     }
 
     fn atomic_write(&self, name: &str, body: &[u8]) -> Result<(), BridgeError> {
@@ -140,8 +148,8 @@ impl RecordingStore {
         Ok(())
     }
 
-    fn media_path(&self, id: Uuid) -> PathBuf {
-        self.root.join(format!("{id}.mp4"))
+    fn media_path(&self, id: Uuid, kind: RecordingMedia) -> PathBuf {
+        self.root.join(format!("{id}.{}", kind.extension()))
     }
 
     fn ensure_root(&self) -> Result<(), BridgeError> {
@@ -163,12 +171,11 @@ fn validate_root(root: &std::path::Path) -> Result<(), BridgeError> {
     Ok(())
 }
 
-fn validate_media(media: &[u8]) -> Result<(), BridgeError> {
-    if !(1024..=MAX_MEDIA_BYTES).contains(&media.len())
-        || media.get(4..8) != Some(b"ftyp".as_slice())
-    {
+fn validate_item(item: &RecordingItem) -> Result<(), BridgeError> {
+    let _kind = RecordingMedia::parse(&item.media_type)?;
+    if item.bytes > MAX_MEDIA_BYTES as u64 || item.started_at > item.ended_at {
         return Err(BridgeError::Protocol(
-            "Ring recording is not a bounded MP4 container".into(),
+            "recording manifest is invalid".into(),
         ));
     }
     Ok(())

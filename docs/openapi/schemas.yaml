@@ -121,35 +121,17 @@ AudioSession:
       type: integer
       minimum: 1
       maximum: 120
-RecordingImportRequest:
-  type: object
-  additionalProperties: false
-  required: [triggered_at]
-  properties:
-    triggered_at:
-      type: integer
-      format: int64
-      description: Unix timestamp of a recent Ring ding.
-RecordingImport:
-  type: object
-  additionalProperties: false
-  required: [import_id, triggered_at, state, recording_id]
-  properties:
-    import_id: {type: string, format: uuid}
-    triggered_at: {type: integer, format: int64}
-    state: {enum: [pending, complete, unavailable, expired, failed]}
-    recording_id: {type: [string, "null"], format: uuid}
 RecordingItem:
   type: object
   additionalProperties: false
-  required: [recording_id, triggered_at, event_at, saved_at, bytes, media_type]
+  required: [recording_id, started_at, ended_at, saved_at, bytes, media_type]
   properties:
     recording_id: {type: string, format: uuid}
-    triggered_at: {type: integer, format: int64}
-    event_at: {type: integer, format: int64}
+    started_at: {type: integer, format: int64}
+    ended_at: {type: integer, format: int64}
     saved_at: {type: integer, format: int64}
-    bytes: {type: integer, format: int64, minimum: 1024, maximum: 67108864}
-    media_type: {const: audio/mp4}
+    bytes: {type: integer, format: int64, minimum: 128, maximum: 8388608}
+    media_type: {enum: [audio/mp4, audio/webm]}
 RecordingList:
   type: object
   additionalProperties: false

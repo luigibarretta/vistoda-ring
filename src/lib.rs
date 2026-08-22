@@ -27,6 +27,7 @@ mod ring_provider;
 pub mod ring_recording;
 mod ring_recording_api;
 mod ring_recording_manager;
+mod ring_recording_media;
 mod ring_recording_store;
 pub mod ring_session;
 mod ring_signal_wire;

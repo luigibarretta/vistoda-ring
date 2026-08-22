@@ -1,200 +1,39 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
-
-use tokio::sync::Mutex;
-use uuid::Uuid;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-    error::BridgeError,
-    ring_provider::RingProvider,
-    ring_recording::{
-        RecordingImport, RecordingImportRequest, RecordingImportState, RecordingItem,
-    },
-    ring_recording_store::RecordingStore,
+    error::BridgeError, ring_recording::RecordingItem, ring_recording_store::RecordingStore,
 };
 
-const FIRST_POLL_DELAY: Duration = Duration::from_secs(15);
-const POLL_INTERVAL: Duration = Duration::from_secs(5);
-const POLL_ATTEMPTS: usize = 36;
-const MAX_JOB_HISTORY: usize = 128;
-
 pub struct RingRecordings {
-    provider: Arc<RingProvider>,
     store: RecordingStore,
-    jobs: Mutex<BTreeMap<Uuid, RecordingImport>>,
-    active: Mutex<bool>,
 }
 
 impl RingRecordings {
-    pub fn production(
-        provider: Arc<RingProvider>,
-        root: PathBuf,
-    ) -> Result<Arc<Self>, BridgeError> {
+    pub fn production(root: PathBuf) -> Result<Arc<Self>, BridgeError> {
         Ok(Arc::new(Self {
-            provider,
             store: RecordingStore::new(root)?,
-            jobs: Mutex::new(BTreeMap::new()),
-            active: Mutex::new(false),
         }))
     }
 
-    pub async fn start(
-        self: &Arc<Self>,
-        request: RecordingImportRequest,
-    ) -> Result<RecordingImport, BridgeError> {
-        validate_trigger(request.triggered_at)?;
-        if let Some(recording) = self.store.find_trigger(request.triggered_at)? {
-            return Ok(completed_import(
-                request.triggered_at,
-                recording.recording_id,
-            ));
-        }
-        let duplicate = self
-            .jobs
-            .lock()
-            .await
-            .values()
-            .find(|job| job.triggered_at.abs_diff(request.triggered_at) <= 5)
-            .cloned();
-        if let Some(job) = duplicate {
-            return Ok(job);
-        }
-        let mut active = self.active.lock().await;
-        if *active {
-            return Err(BridgeError::RecordingBusy);
-        }
-        *active = true;
-        drop(active);
-        let job = RecordingImport {
-            import_id: Uuid::new_v4(),
-            triggered_at: request.triggered_at,
-            state: RecordingImportState::Pending,
-            recording_id: None,
-        };
-        self.jobs.lock().await.insert(job.import_id, job.clone());
-        let manager = Arc::clone(self);
-        let task_job = job.clone();
-        tokio::spawn(async move { manager.run(task_job).await });
-        Ok(job)
-    }
-
-    pub async fn status(&self, id: Uuid) -> Result<RecordingImport, BridgeError> {
-        self.jobs
-            .lock()
-            .await
-            .get(&id)
-            .cloned()
-            .ok_or(BridgeError::RecordingNotFound)
+    pub fn commit(
+        &self,
+        started_at: i64,
+        ended_at: i64,
+        media_type: &str,
+        media: &[u8],
+    ) -> Result<RecordingItem, BridgeError> {
+        self.store.commit(started_at, ended_at, media_type, media)
     }
 
     pub fn list(&self) -> Result<Vec<RecordingItem>, BridgeError> {
         self.store.list()
     }
 
-    pub fn media(&self, id: Uuid) -> Result<Vec<u8>, BridgeError> {
+    pub fn media(&self, id: uuid::Uuid) -> Result<(String, Vec<u8>), BridgeError> {
         self.store.read(id)
     }
 
-    pub fn delete(&self, id: Uuid) -> Result<(), BridgeError> {
+    pub fn delete(&self, id: uuid::Uuid) -> Result<(), BridgeError> {
         self.store.delete(id)
-    }
-
-    async fn run(self: Arc<Self>, job: RecordingImport) {
-        tokio::time::sleep(FIRST_POLL_DELAY).await;
-        let result = self.poll_and_commit(&job).await;
-        let (state, recording_id) = match result {
-            Ok(Some(recording)) => (RecordingImportState::Complete, Some(recording.recording_id)),
-            Ok(None) => (RecordingImportState::Expired, None),
-            Err(BridgeError::RecordingUnavailable) => (RecordingImportState::Unavailable, None),
-            Err(error) => {
-                tracing::warn!(error = %error, "Ring recording import failed");
-                (RecordingImportState::Failed, None)
-            }
-        };
-        {
-            let mut jobs = self.jobs.lock().await;
-            if let Some(current) = jobs.get_mut(&job.import_id) {
-                current.state = state;
-                current.recording_id = recording_id;
-            }
-            trim_job_history(&mut jobs, job.import_id);
-            drop(jobs);
-        }
-        *self.active.lock().await = false;
-    }
-
-    async fn poll_and_commit(
-        &self,
-        job: &RecordingImport,
-    ) -> Result<Option<RecordingItem>, BridgeError> {
-        let client = self.provider.client().await?;
-        for attempt in 0..POLL_ATTEMPTS {
-            if let Some(source) = client.find_recording_since(job.triggered_at).await? {
-                let media = client.download_recording(&source).await?;
-                return self
-                    .store
-                    .commit(job.triggered_at, source.created_at, &media)
-                    .map(Some);
-            }
-            if attempt + 1 < POLL_ATTEMPTS {
-                tokio::time::sleep(POLL_INTERVAL).await;
-            }
-        }
-        Ok(None)
-    }
-}
-
-fn validate_trigger(triggered_at: i64) -> Result<(), BridgeError> {
-    let current = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| BridgeError::InvalidRequest("system clock is invalid".into()))?
-        .as_secs();
-    let current = i64::try_from(current).unwrap_or(i64::MAX);
-    if triggered_at < current.saturating_sub(3600) || triggered_at > current.saturating_add(60) {
-        return Err(BridgeError::InvalidRequest(
-            "triggered_at must be within the last hour".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn completed_import(triggered_at: i64, recording_id: Uuid) -> RecordingImport {
-    RecordingImport {
-        import_id: Uuid::new_v4(),
-        triggered_at,
-        state: RecordingImportState::Complete,
-        recording_id: Some(recording_id),
-    }
-}
-
-fn trim_job_history(jobs: &mut BTreeMap<Uuid, RecordingImport>, current: Uuid) {
-    let remove = jobs.len().saturating_sub(MAX_JOB_HISTORY);
-    let stale = jobs
-        .iter()
-        .filter(|(id, job)| **id != current && job.state != RecordingImportState::Pending)
-        .map(|(id, _)| *id)
-        .take(remove)
-        .collect::<Vec<_>>();
-    for id in stale {
-        jobs.remove(&id);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn completed_job_history_is_bounded_and_keeps_the_current_result() {
-        let current = Uuid::new_v4();
-        let mut jobs = (0..=MAX_JOB_HISTORY)
-            .map(|_| {
-                let id = Uuid::new_v4();
-                (id, completed_import(0, Uuid::new_v4()))
-            })
-            .collect::<BTreeMap<_, _>>();
-        jobs.insert(current, completed_import(500, Uuid::new_v4()));
-        trim_job_history(&mut jobs, current);
-        assert_eq!(jobs.len(), MAX_JOB_HISTORY);
-        assert!(jobs.contains_key(&current));
     }
 }

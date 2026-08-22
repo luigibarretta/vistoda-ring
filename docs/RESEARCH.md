@@ -29,14 +29,10 @@
   PCMU RTP, outbound silence and complete teardown without a remote close.
 - The maintained canary uses `webrtc` 0.20.2 and passes the strict RustSec
   audit; its semantic output contains no Ring identity, SDP, ICE or audio.
-- Ring officially supports call recording on Ring Intercom Audio with an
-  eligible subscription. Recording begins only after the call is answered,
-  and the device plays a spoken recording notice first.
 - The owned integration exposes `event.citofono_ding`; this is a stable local
-  trigger for a bounded post-call import without opening a competing session.
-- Device discovery exposes recording eligibility separately from the event
-  history. `research-recordings` reports only booleans and aggregate counts;
-  it never emits event identifiers, URLs or media.
+  trigger for Companion incoming-call notifications.
+- The owned Ring account and official application expose no Call Recording
+  control. Local Vistoda session capture is therefore the supported archive.
 
 The Rust implementation contains an opt-in discovery command and a separate
 5–30 second audio canary. Neither is instantiated by the running HTTP service.
@@ -55,7 +51,6 @@ implemented; the vendor media protocol is no longer the unknown.
 - Opus behaviour on the owned audio-only model;
 - call concurrency and throttling behaviour;
 - whether the official app uses certificate pinning;
-- exact completion latency and media container of owned-device call recordings.
 
 ## Evidence rules
 
@@ -76,4 +71,3 @@ implemented; the vendor media protocol is no longer the unknown.
 - <https://github.com/tsightler/ring-mqtt/wiki>
 - <https://github.com/python-ring-doorbell/python-ring-doorbell/blob/main/ring_doorbell/webrtcstream.py>
 - <https://github.com/cmos486/ring-intercom-video>
-- <https://ring.com/support/articles/g0dgf/recording-voicemail-ring-intercom-devices>

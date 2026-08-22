@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.5.0
+  version: 0.6.0
   description: >-
     Private control-plane and bounded WebRTC signaling contract for Ring
     Intercom Audio. The bridge never exposes vendor or bridge credentials.
@@ -196,10 +196,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Unknown alias
-  /v1/devices/{device}/recording-imports:
-    $ref: "./docs/openapi/recording-paths.yaml#/RecordingImports"
-  /v1/devices/{device}/recording-imports/{import}:
-    $ref: "./docs/openapi/recording-paths.yaml#/RecordingImportStatus"
   /v1/devices/{device}/recordings:
     $ref: "./docs/openapi/recording-paths.yaml#/Recordings"
   /v1/devices/{device}/recordings/{recording}:
@@ -237,9 +233,7 @@ components:
       $ref: "./docs/openapi/schemas.yaml#/AudioSessionRequest"
     AudioSession:
       $ref: "./docs/openapi/schemas.yaml#/AudioSession"
-    RecordingImportRequest:
-      $ref: "./docs/openapi/schemas.yaml#/RecordingImportRequest"
-    RecordingImport:
-      $ref: "./docs/openapi/schemas.yaml#/RecordingImport"
+    RecordingItem:
+      $ref: "./docs/openapi/schemas.yaml#/RecordingItem"
     RecordingList:
       $ref: "./docs/openapi/schemas.yaml#/RecordingList"

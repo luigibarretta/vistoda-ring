@@ -1,4 +1,5 @@
 use reqwest::Method;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use zeroize::Zeroizing;
 
@@ -12,12 +13,24 @@ use crate::{
 };
 
 const CONTROL_BODY_LIMIT: usize = 64 * 1024;
+const EVENTS_BODY_LIMIT: usize = 512 * 1024;
+
+#[derive(Deserialize)]
+struct EventEnvelope {
+    #[serde(default)]
+    events: Vec<ActivityEvent>,
+}
+
+#[derive(Deserialize)]
+struct ActivityEvent {
+    created_at: String,
+}
 
 impl RingClient {
     pub async fn device_status(&self) -> Result<RingDeviceStatus, BridgeError> {
         let device = only_device(self.discover_intercoms().await?)?;
         let (doorbell_volume, mic_volume, voice_volume) = device.volumes();
-        let last_activity = self.latest_activity().await.ok().flatten();
+        let last_activity = self.latest_activity(&device).await.ok().flatten();
         Ok(RingDeviceStatus {
             battery: device.battery(),
             online: device.online(),
@@ -152,6 +165,56 @@ impl RingClient {
         }
         Err(BridgeError::Protocol("control retry was exhausted".into()))
     }
+
+    async fn latest_activity(
+        &self,
+        device: &RingIntercomIdentity,
+    ) -> Result<Option<i64>, BridgeError> {
+        let location = device
+            .location_id()
+            .filter(|value| valid_provider_id(value))
+            .ok_or_else(|| BridgeError::Protocol("Ring location is unavailable".into()))?;
+        let endpoint = format!(
+            "{}/locations/{location}/devices/{}/events?limit=20",
+            self.endpoints.client_api,
+            device.id()
+        );
+        let mut state = self.state.lock().await;
+        self.ensure_authenticated(&mut state).await?;
+        self.ensure_registered(&mut state).await?;
+        let response = self
+            .http
+            .get(endpoint)
+            .bearer_auth(access_value(&state)?)
+            .header("hardware_id", state.session.hardware_id().to_string())
+            .header(reqwest::header::USER_AGENT, USER_AGENT)
+            .send()
+            .await
+            .map_err(|error| BridgeError::Transport("activity history", error))?;
+        drop(state);
+        let body = checked_body(response, "activity history", EVENTS_BODY_LIMIT).await?;
+        let events = serde_json::from_slice::<EventEnvelope>(&body)?.events;
+        events
+            .iter()
+            .map(|event| {
+                time::OffsetDateTime::parse(
+                    &event.created_at,
+                    &time::format_description::well_known::Rfc3339,
+                )
+                .map(time::OffsetDateTime::unix_timestamp)
+                .map_err(|_| BridgeError::Protocol("Ring activity timestamp is invalid".into()))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(|values| values.into_iter().max())
+    }
+}
+
+fn valid_provider_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 fn only_device(

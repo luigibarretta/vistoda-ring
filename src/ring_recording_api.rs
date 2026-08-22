@@ -2,54 +2,56 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    body::Bytes,
+    extract::{DefaultBodyLimit, Path, Query, State},
+    http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
 };
 
 use crate::{
     api::Runtime,
     auth::require_bearer,
     error::BridgeError,
-    ring_recording::{RecordingImport, RecordingImportRequest, RecordingList},
+    ring_recording::{RecordingList, RecordingUploadQuery},
+    ring_recording_media::MAX_MEDIA_BYTES,
 };
 
 pub fn routes() -> Router<Arc<Runtime>> {
     Router::new()
-        .route("/v1/devices/{device}/recording-imports", post(start_import))
         .route(
-            "/v1/devices/{device}/recording-imports/{import}",
-            get(import_status),
+            "/v1/devices/{device}/recordings",
+            get(recordings)
+                .post(upload_recording)
+                .layer(DefaultBodyLimit::max(MAX_MEDIA_BYTES)),
         )
-        .route("/v1/devices/{device}/recordings", get(recordings))
         .route(
             "/v1/devices/{device}/recordings/{recording}",
             get(media).delete(delete_recording),
         )
 }
 
-async fn start_import(
+async fn upload_recording(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
+    Query(query): Query<RecordingUploadQuery>,
     headers: HeaderMap,
-    Json(input): Json<RecordingImportRequest>,
-) -> Result<(StatusCode, Json<RecordingImport>), BridgeError> {
+    body: Bytes,
+) -> Result<(StatusCode, Json<crate::ring_recording::RecordingItem>), BridgeError> {
     authorize_device(&runtime, &headers, &device)?;
+    query.validate()?;
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| BridgeError::InvalidRequest("recording content type is required".into()))?;
     Ok((
-        StatusCode::ACCEPTED,
-        Json(runtime.recordings.start(input).await?),
+        StatusCode::CREATED,
+        Json(
+            runtime
+                .recordings
+                .commit(query.started_at, query.ended_at, content_type, &body)?,
+        ),
     ))
-}
-
-async fn import_status(
-    State(runtime): State<Arc<Runtime>>,
-    Path((device, import)): Path<(String, String)>,
-    headers: HeaderMap,
-) -> Result<Json<RecordingImport>, BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
-    let id = uuid::Uuid::parse_str(&import).map_err(|_| BridgeError::RecordingNotFound)?;
-    Ok(Json(runtime.recordings.status(id).await?))
 }
 
 async fn recordings(
@@ -70,10 +72,8 @@ async fn media(
 ) -> Result<impl IntoResponse, BridgeError> {
     authorize_device(&runtime, &headers, &device)?;
     let id = uuid::Uuid::parse_str(&recording).map_err(|_| BridgeError::RecordingNotFound)?;
-    Ok((
-        [("content-type", "audio/mp4")],
-        runtime.recordings.media(id)?,
-    ))
+    let (content_type, body) = runtime.recordings.media(id)?;
+    Ok(([("content-type", content_type)], body))
 }
 
 async fn delete_recording(

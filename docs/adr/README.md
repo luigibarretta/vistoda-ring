@@ -12,9 +12,10 @@
 | [0008](0008-home-assistant-enrollment.md) | Native HA enrollment boundary |
 | [0009](0009-ring-signalsocket-audio.md) | Proven Ring signalsocket audio protocol |
 | [0010](0010-consumer-webrtc-sessions.md) | Private consumer WebRTC session boundary |
-| [0011](0011-official-call-recording-import.md) | Official post-ding call recording import |
+| [0011](0011-official-call-recording-import.md) | Superseded official recording import |
 | [0012](0012-native-status-and-controls.md) | Native Ring status and controls |
 | [0013](0013-session-observability.md) | Aggregate communication observability |
+| [0014](0014-local-vistoda-call-recording.md) | Local Vistoda call recording archive |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.

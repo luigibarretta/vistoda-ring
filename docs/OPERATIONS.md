@@ -100,18 +100,20 @@ bridge never retries rejected credentials, MFA or HTTP 429 responses.
 6. Submit only a fully gathered audio-only PCMU offer through Vistoda or an
    approved backend, then always send the idempotent session `DELETE`.
 
-## Call recording archive
+## Local call recording archive
 
-Enable Call Recording in Ring app → Device Settings → Privacy Settings before
-enabling the Home Assistant ding automation. The bridge does not change this
-provider setting. A ding import returns immediately and may remain pending for
-up to three minutes while Ring finishes an answered call. Missed calls and
-ineligible accounts produce no local media.
+Vistoda records only an active browser communication. Its recorder mixes the
+remote WebRTC audio with the microphone track only while the user has enabled
+that track. The Home Assistant WebSocket proxy accepts at most 8 MiB of base64,
+decodes it and forwards the raw WebM or MP4 body to the authenticated bridge.
+Ring Call Recording, a Ring subscription and a provider media import are not
+part of this contract.
 
 Keep `/data` on private persistent storage owned by UID/GID 10001. Recording
 files are mode `0600`; the recording directory is `0700`. The bridge removes
 items older than 30 days and then the oldest items whenever the archive exceeds
-512 MiB. A successful consumer commit must be followed by idempotent `DELETE`.
+512 MiB. SceneTrove must send idempotent `DELETE` after its local commit; a
+second delete intentionally returns `204`.
 
 ## Failure behaviour
 
@@ -123,7 +125,7 @@ items older than 30 days and then the oldest items whenever the archive exceeds
 - Ring/network outage during enrollment or session start: stable `502`;
 - rejected credentials/code: stable `422`, with no automatic retry;
 - expired/consumed challenge: `410`; concurrent flow: `409`; throttling: `429`.
-- disabled/unavailable provider recording: import state `unavailable`;
-- unanswered or unfinalized call: import state `expired` and no file.
+- invalid container, size or timestamps: stable `400` and no file;
+- browser upload interruption: no manifest is committed.
 
 Audio sessions accept one peer per alias and never authorize door actions.

@@ -42,8 +42,6 @@ struct RawDevice {
     #[serde(default)]
     settings: RawSettings,
     #[serde(default)]
-    features: RawFeatures,
-    #[serde(default)]
     battery_life: Option<Value>,
     #[serde(default)]
     alerts: RawAlerts,
@@ -53,8 +51,6 @@ pub struct RingIntercomIdentity {
     id: u64,
     description: String,
     location_id: Option<String>,
-    recording_enabled: bool,
-    recordings_visible: bool,
     battery: Option<u8>,
     online: bool,
     doorbell_volume: Option<u8>,
@@ -64,28 +60,18 @@ pub struct RingIntercomIdentity {
 
 #[derive(Default, Deserialize)]
 struct RawSettings {
-    #[serde(default)]
-    recording_enabled: bool,
-    #[serde(default)]
-    show_recordings: bool,
-    #[serde(default)]
-    doorbell_volume: Option<u8>,
-    #[serde(default)]
-    mic_volume: Option<u8>,
-    #[serde(default)]
-    voice_volume: Option<u8>,
+    #[serde(default, rename = "doorbell_volume")]
+    doorbell: Option<u8>,
+    #[serde(default, rename = "mic_volume")]
+    mic: Option<u8>,
+    #[serde(default, rename = "voice_volume")]
+    voice: Option<u8>,
 }
 
 #[derive(Default, Deserialize)]
 struct RawAlerts {
     #[serde(default)]
     connection: Option<String>,
-}
-
-#[derive(Default, Deserialize)]
-struct RawFeatures {
-    #[serde(default)]
-    show_recordings: bool,
 }
 
 impl RingIntercomIdentity {
@@ -102,16 +88,6 @@ impl RingIntercomIdentity {
     #[must_use]
     pub fn location_id(&self) -> Option<&str> {
         self.location_id.as_deref()
-    }
-
-    #[must_use]
-    pub const fn recording_enabled(&self) -> bool {
-        self.recording_enabled
-    }
-
-    #[must_use]
-    pub const fn recordings_visible(&self) -> bool {
-        self.recordings_visible
     }
 
     #[must_use]
@@ -165,9 +141,9 @@ pub fn parse_devices(input: &[u8]) -> Result<Vec<RingIntercomIdentity>, BridgeEr
         }
         let battery = parse_battery(device.battery_life.as_ref())?;
         for value in [
-            device.settings.doorbell_volume,
-            device.settings.mic_volume,
-            device.settings.voice_volume,
+            device.settings.doorbell,
+            device.settings.mic,
+            device.settings.voice,
         ]
         .into_iter()
         .flatten()
@@ -180,13 +156,11 @@ pub fn parse_devices(input: &[u8]) -> Result<Vec<RingIntercomIdentity>, BridgeEr
             id: device.id,
             description: device.description,
             location_id: device.location_id,
-            recording_enabled: device.settings.recording_enabled,
-            recordings_visible: device.settings.show_recordings || device.features.show_recordings,
             battery,
             online: device.alerts.connection.as_deref() != Some("offline"),
-            doorbell_volume: device.settings.doorbell_volume,
-            mic_volume: device.settings.mic_volume,
-            voice_volume: device.settings.voice_volume,
+            doorbell_volume: device.settings.doorbell,
+            mic_volume: device.settings.mic,
+            voice_volume: device.settings.voice,
         });
     }
     Ok(intercoms)
