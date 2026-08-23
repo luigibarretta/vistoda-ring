@@ -1,0 +1,3 @@
+[allowlist]
+description = "Public RFC 6455 WebSocket handshake fixture"
+regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']

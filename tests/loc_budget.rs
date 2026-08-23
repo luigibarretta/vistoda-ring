@@ -6,7 +6,7 @@ use std::{
 
 const MAX_LINES: usize = 250;
 const EXCLUDED_DIRECTORIES: &[&str] = &[".git", "target"];
-const MAINTAINED_SUFFIXES: &[&str] = &["json", "md", "rs", "toml", "yaml", "yml"];
+const MAINTAINED_SUFFIXES: &[&str] = &["json", "md", "rs", "sh", "toml", "yaml", "yml"];
 
 #[test]
 fn maintained_files_stay_within_the_loc_budget() {

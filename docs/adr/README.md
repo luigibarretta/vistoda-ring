@@ -18,6 +18,7 @@
 | [0014](0014-local-vistoda-call-recording.md) | Local Vistoda call recording archive |
 | [0015](0015-native-apple-audio-relay.md) | Native Apple audio relay boundary |
 | [0016](0016-vistoda-product-identity.md) | Vistoda product identity and compatibility names |
+| [0017](0017-home-assistant-app-packaging.md) | Home Assistant app packaging and discovery |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.
