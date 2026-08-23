@@ -4,9 +4,9 @@ version = "0.7.0"
 edition = "2024"
 rust-version = "1.96"
 authors = ["Luigi Barretta"]
-description = "Bounded Ring Intercom audio bridge for Home Assistant and SceneTrove"
+description = "Vistoda connector for bounded Ring Intercom audio delivery"
 license = "Apache-2.0"
-repository = "https://git.luigibarretta.com/luigibarretta/ring-intercom-bridge"
+repository = "https://git.luigibarretta.com/luigibarretta/vistoda-ring"
 
 [lib]
 name = "ring_intercom_bridge"

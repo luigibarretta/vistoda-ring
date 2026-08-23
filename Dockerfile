@@ -7,9 +7,10 @@ RUN cargo build --locked --release
 FROM debian:bookworm-slim
 ARG VERSION=0.1.0
 ARG REVISION=unknown
-LABEL org.opencontainers.image.title="ring-intercom-bridge" \
+LABEL org.opencontainers.image.title="Vistoda Ring" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$REVISION" \
+      org.opencontainers.image.source="https://git.luigibarretta.com/luigibarretta/vistoda-ring" \
       org.opencontainers.image.licenses="Apache-2.0"
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \

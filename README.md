@@ -1,7 +1,11 @@
-# Ring Intercom Bridge
+# Vistoda Ring
 
-Production Rust boundary for bounded Ring Intercom Audio delivery to Home
+Production Rust connector for bounded Ring Intercom Audio delivery to Home
 Assistant and SceneTrove.
+
+The Rust package and executable remain `ring-intercom-bridge` as a compatibility
+contract for existing images, health checks and automation. The product and
+canonical repository are Vistoda Ring and `vistoda-ring`.
 
 ## Current status
 
