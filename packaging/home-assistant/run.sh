@@ -18,7 +18,11 @@ jq -n --arg alias "${alias_name}" \
     '{($alias): {kind: "ring_intercom_audio"}}' >"${devices_file}"
 chown bridge:bridge "${token_file}" "${devices_file}"
 chown -R bridge:bridge "${data_dir}/recordings"
-test ! -e "${data_dir}/ring-session.json" || chown bridge:bridge "${data_dir}/ring-session.json"
+chmod 0700 "${data_dir}/recordings"
+if test -e "${data_dir}/ring-session.json"; then
+    chown bridge:bridge "${data_dir}/ring-session.json"
+    chmod 0600 "${data_dir}/ring-session.json"
+fi
 chmod 0600 "${token_file}" "${devices_file}"
 
 export RING_INTERCOM_API_TOKEN_FILE="${token_file}"

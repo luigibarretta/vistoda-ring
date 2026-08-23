@@ -16,6 +16,7 @@ fn home_assistant_app_is_private_discovered_and_multiarch() {
     assert!(runner.contains("--rawfile api_token"));
     assert!(runner.contains("managed_app: true"));
     assert!(runner.contains("chown bridge:bridge \"${data_dir}\""));
+    assert!(runner.contains("chmod 0600 \"${data_dir}/ring-session.json\""));
     assert!(!runner.contains("8775:8775"));
     assert!(workflow.contains("[\"amd64\", \"aarch64\"]"));
     assert!(workflow.contains("home-assistant/builder/actions/build-image"));
