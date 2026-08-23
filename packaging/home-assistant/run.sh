@@ -8,6 +8,7 @@ readonly devices_file=/data/devices.json
 
 umask 077
 mkdir -p "${data_dir}/recordings"
+chown bridge:bridge "${data_dir}"
 
 alias_name="$(jq -er '.alias | strings | select(test("^[A-Za-z0-9_-]+$"))' "${options_file}")"
 if ! test -f "${token_file}" || ! grep -Eq '^[0-9a-f]{64}$' "${token_file}"; then
