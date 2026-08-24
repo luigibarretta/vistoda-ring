@@ -5,9 +5,30 @@ readonly data_dir=/data
 readonly options_file=/data/options.json
 readonly token_file=/data/api-token
 readonly devices_file=/data/devices.json
+readonly storage_marker=/data/recording-storage
+. /usr/local/lib/vistoda-recording-storage
 
 umask 077
-mkdir -p "${data_dir}/recordings"
+test -n "${SUPERVISOR_TOKEN:-}" || exit 1
+app_info="$(curl -fsS --retry 5 --retry-all-errors \
+    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+    http://supervisor/addons/self/info)"
+app_hostname="$(printf '%s' "${app_info}" | jq -er '.data.hostname')"
+app_slug="$(printf '%s' "${app_info}" | jq -er '.data.slug')"
+storage_choice="$(jq -er '(.recording_storage // "private") | strings |
+    select(. == "private" or . == "addon_config" or . == "media" or . == "share")' \
+    "${options_file}")"
+recording_dir="$(storage_directory "${storage_choice}")"
+case "${storage_choice}" in
+    private) recording_display_dir=/data/recordings ;;
+    addon_config) recording_display_dir="/addon_configs/${app_slug}/recordings" ;;
+    media) recording_display_dir=/media/vistoda-ring ;;
+    share) recording_display_dir=/share/vistoda-ring ;;
+esac
+previous_storage="$(test -f "${storage_marker}" && cat "${storage_marker}" || printf private)"
+previous_dir="$(storage_directory "${previous_storage}")"
+migrate_recordings "${previous_dir}" "${recording_dir}"
+mkdir -p "${recording_dir}"
 chown bridge:bridge "${data_dir}"
 
 alias_name="$(jq -er '.alias | strings | select(test("^[A-Za-z0-9_-]+$"))' "${options_file}")"
@@ -17,18 +38,23 @@ fi
 jq -n --arg alias "${alias_name}" \
     '{($alias): {kind: "ring_intercom_audio"}}' >"${devices_file}"
 chown bridge:bridge "${token_file}" "${devices_file}"
-chown -R bridge:bridge "${data_dir}/recordings"
-chmod 0700 "${data_dir}/recordings"
+chown -R bridge:bridge "${recording_dir}"
+chmod 0700 "${recording_dir}"
 if test -e "${data_dir}/ring-session.json"; then
     chown bridge:bridge "${data_dir}/ring-session.json"
     chmod 0600 "${data_dir}/ring-session.json"
 fi
 chmod 0600 "${token_file}" "${devices_file}"
+printf '%s\n' "${storage_choice}" >"${storage_marker}.new"
+chmod 0600 "${storage_marker}.new"
+mv "${storage_marker}.new" "${storage_marker}"
 
 export RING_INTERCOM_API_TOKEN_FILE="${token_file}"
 export RING_INTERCOM_DEVICES_FILE="${devices_file}"
 export RING_INTERCOM_SESSION_FILE="${data_dir}/ring-session.json"
-export RING_INTERCOM_RECORDING_DIR="${data_dir}/recordings"
+export RING_INTERCOM_RECORDING_DIR="${recording_dir}"
+export RING_INTERCOM_RECORDING_DISPLAY_DIR="${recording_display_dir}"
+export RING_INTERCOM_RECORDING_STORAGE_KIND="${storage_choice}"
 
 gosu bridge:bridge ring-intercom-bridge serve &
 child_pid=$!
@@ -49,10 +75,6 @@ until curl -fsS --max-time 2 http://127.0.0.1:8775/healthz >/dev/null; do
     sleep 1
 done
 
-test -n "${SUPERVISOR_TOKEN:-}" || exit 1
-app_hostname="$(curl -fsS --retry 5 --retry-all-errors \
-    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-    http://supervisor/addons/self/info | jq -er '.data.hostname')"
 private_url="http://${app_hostname}:8775"
 jq -n \
     --arg service media_bridge \

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -13,9 +15,63 @@ pub struct RecordingItem {
     pub media_type: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingStorageKind {
+    Private,
+    AddonConfig,
+    Media,
+    Share,
+    Custom,
+}
+
+impl RecordingStorageKind {
+    pub fn parse(value: &str) -> Result<Self, BridgeError> {
+        match value {
+            "private" => Ok(Self::Private),
+            "addon_config" => Ok(Self::AddonConfig),
+            "media" => Ok(Self::Media),
+            "share" => Ok(Self::Share),
+            "custom" => Ok(Self::Custom),
+            _ => Err(BridgeError::Configuration(
+                "recording storage kind is unsupported".into(),
+            )),
+        }
+    }
+
+    #[must_use]
+    pub const fn user_visible(self) -> bool {
+        !matches!(self, Self::Private)
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecordingStorage {
+    pub kind: RecordingStorageKind,
+    pub directory: String,
+    pub user_visible: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ArchivedRecording {
+    #[serde(flatten)]
+    pub item: RecordingItem,
+    pub storage_path: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct RecordingList {
-    pub recordings: Vec<RecordingItem>,
+    pub storage: RecordingStorage,
+    pub recordings: Vec<ArchivedRecording>,
+}
+
+pub fn storage_path(directory: &str, item: &RecordingItem) -> Result<String, BridgeError> {
+    let extension =
+        crate::ring_recording_media::RecordingMedia::parse(&item.media_type)?.extension();
+    Ok(Path::new(directory)
+        .join(format!("{}.{}", item.recording_id, extension))
+        .to_string_lossy()
+        .into_owned())
 }
 
 #[derive(Debug, Deserialize)]

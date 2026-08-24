@@ -18,17 +18,28 @@ use crate::{BridgeError, ring_media_handler::PeerStats, ring_relay_metrics::Rela
 const FRAME_BYTES: usize = 160;
 const FRAME_DURATION: Duration = Duration::from_millis(20);
 
-#[allow(clippy::too_many_arguments)]
-pub fn spawn(
-    track: Arc<TrackLocalStaticSample>,
-    sender: Arc<dyn RtpSender>,
-    connected: Arc<Notify>,
-    stopped: Arc<AtomicBool>,
-    stats: Arc<PeerStats>,
-    mut receiver: mpsc::Receiver<Vec<u8>>,
-    deadline: Duration,
-    metrics: Option<Arc<RelayMetrics>>,
-) {
+pub struct SenderTask {
+    pub track: Arc<TrackLocalStaticSample>,
+    pub sender: Arc<dyn RtpSender>,
+    pub connected: Arc<Notify>,
+    pub stopped: Arc<AtomicBool>,
+    pub stats: Arc<PeerStats>,
+    pub receiver: mpsc::Receiver<Vec<u8>>,
+    pub deadline: Duration,
+    pub metrics: Option<Arc<RelayMetrics>>,
+}
+
+pub fn spawn(task: SenderTask) {
+    let SenderTask {
+        track,
+        sender,
+        connected,
+        stopped,
+        stats,
+        mut receiver,
+        deadline,
+        metrics,
+    } = task;
     tokio::spawn(async move {
         let notified = connected.notified();
         tokio::pin!(notified);

@@ -13,7 +13,9 @@ use crate::{
     api::Runtime,
     auth::require_bearer,
     error::BridgeError,
-    ring_recording::{RecordingList, RecordingUploadQuery},
+    ring_recording::{
+        ArchivedRecording, RecordingList, RecordingStorage, RecordingUploadQuery, storage_path,
+    },
     ring_recording_media::MAX_MEDIA_BYTES,
 };
 
@@ -60,8 +62,26 @@ async fn recordings(
     headers: HeaderMap,
 ) -> Result<Json<RecordingList>, BridgeError> {
     authorize_device(&runtime, &headers, &device)?;
+    let directory = runtime.config.recording_display_dir.clone();
+    let kind = runtime.config.recording_storage_kind;
+    let recordings = runtime
+        .recordings
+        .list()?
+        .into_iter()
+        .map(|item| {
+            Ok(ArchivedRecording {
+                storage_path: storage_path(&directory, &item)?,
+                item,
+            })
+        })
+        .collect::<Result<Vec<_>, BridgeError>>()?;
     Ok(Json(RecordingList {
-        recordings: runtime.recordings.list()?,
+        storage: RecordingStorage {
+            kind,
+            directory,
+            user_visible: kind.user_visible(),
+        },
+        recordings,
     }))
 }
 

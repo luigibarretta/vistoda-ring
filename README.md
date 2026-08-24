@@ -77,8 +77,12 @@ class; raw URIs, query values, bodies and authorization data are excluded.
 Recordings are produced only while a user-owned Vistoda WebRTC session is
 active. The browser mixes inbound audio and its microphone only when that
 microphone is explicitly enabled, then uploads through Home Assistant's
-authenticated backend proxy. Files are atomic, private, individually capped at
-8 MiB, retained for 30 days and capped to 512 MiB total.
+authenticated backend proxy. Files are atomic, individually capped at 8 MiB,
+retained for 30 days and capped to 512 MiB total. The managed app keeps private
+storage as the default and lets the user select app-config, media or share
+storage. The authenticated inventory reports the effective directory and exact
+per-recording path; standalone deployments can set separate runtime and display
+paths.
 
 See [`openapi.yaml`](openapi.yaml). Browsers must use an authenticated backend
 proxy; they never receive the bridge token.

@@ -15,6 +15,8 @@ Calls remain on demand, authenticated, single-device and limited to 120 seconds.
 | `RING_INTERCOM_DEVICES_FILE` | `/config/devices.json` | alias-only device kinds |
 | `RING_INTERCOM_SESSION_FILE` | `/data/ring-session.json` | dedicated rotating session |
 | `RING_INTERCOM_RECORDING_DIR` | `/data/recordings` | private bounded call archive |
+| `RING_INTERCOM_RECORDING_DISPLAY_DIR` | `/data/recordings` | user-facing absolute archive path |
+| `RING_INTERCOM_RECORDING_STORAGE_KIND` | `private` | `private`, `addon_config`, `media`, `share` or `custom` |
 
 The devices file contains no Ring ID or credential. Only
 `ring_intercom_audio` is accepted during the research phase.

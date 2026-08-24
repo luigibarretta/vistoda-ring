@@ -161,16 +161,16 @@ impl MediaPeer {
         deadline: Duration,
         metrics: Option<Arc<RelayMetrics>>,
     ) {
-        ring_media_sender::spawn(
-            Arc::clone(&self.local_audio),
-            Arc::clone(&self.sender),
-            Arc::clone(&self.connected),
-            Arc::clone(&self.stopped),
-            Arc::clone(&self.stats),
+        ring_media_sender::spawn(ring_media_sender::SenderTask {
+            track: Arc::clone(&self.local_audio),
+            sender: Arc::clone(&self.sender),
+            connected: Arc::clone(&self.connected),
+            stopped: Arc::clone(&self.stopped),
+            stats: Arc::clone(&self.stats),
             receiver,
             deadline,
             metrics,
-        );
+        });
     }
 
     pub async fn wait_connected(&self, deadline: Duration) -> Result<(), BridgeError> {

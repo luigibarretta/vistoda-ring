@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, env, net::SocketAddr, path::PathBuf};
 use crate::{
     error::BridgeError,
     model::{DeviceConfig, DeviceKind},
+    ring_recording::RecordingStorageKind,
 };
 
 #[derive(Clone)]
@@ -13,6 +14,8 @@ pub struct BridgeConfig {
     pub devices: BTreeMap<String, DeviceConfig>,
     pub session_file: PathBuf,
     pub recording_dir: PathBuf,
+    pub recording_display_dir: String,
+    pub recording_storage_kind: RecordingStorageKind,
 }
 
 impl BridgeConfig {
@@ -27,13 +30,20 @@ impl BridgeConfig {
             token,
             serde_json::from_str(&devices)?,
         )
-        .map(|config| {
+        .and_then(|config| {
             config
                 .with_session_file(path(
                     "RING_INTERCOM_SESSION_FILE",
                     "/data/ring-session.json",
                 ))
                 .with_recording_dir(path("RING_INTERCOM_RECORDING_DIR", "/data/recordings"))
+                .with_recording_display(
+                    value("RING_INTERCOM_RECORDING_DISPLAY_DIR", "/data/recordings"),
+                    RecordingStorageKind::parse(&value(
+                        "RING_INTERCOM_RECORDING_STORAGE_KIND",
+                        "private",
+                    ))?,
+                )
         })
     }
 
@@ -57,6 +67,8 @@ impl BridgeConfig {
             devices,
             session_file: PathBuf::from("/data/ring-session.json"),
             recording_dir: PathBuf::from("/data/recordings"),
+            recording_display_dir: "/data/recordings".into(),
+            recording_storage_kind: RecordingStorageKind::Private,
         })
     }
 
@@ -70,6 +82,25 @@ impl BridgeConfig {
     pub fn with_recording_dir(mut self, path: PathBuf) -> Self {
         self.recording_dir = path;
         self
+    }
+
+    pub fn with_recording_display(
+        mut self,
+        path: String,
+        kind: RecordingStorageKind,
+    ) -> Result<Self, BridgeError> {
+        if path.len() > 1024
+            || !path.starts_with('/')
+            || path.chars().any(char::is_control)
+            || path.ends_with('/')
+        {
+            return Err(BridgeError::Configuration(
+                "recording display directory must be a bounded absolute path".into(),
+            ));
+        }
+        self.recording_display_dir = path;
+        self.recording_storage_kind = kind;
+        Ok(self)
     }
 
     pub fn socket_address(&self) -> Result<SocketAddr, BridgeError> {

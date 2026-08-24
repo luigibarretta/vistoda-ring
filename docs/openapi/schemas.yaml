@@ -132,11 +132,26 @@ RecordingItem:
     saved_at: {type: integer, format: int64}
     bytes: {type: integer, format: int64, minimum: 128, maximum: 8388608}
     media_type: {enum: [audio/mp4, audio/webm]}
+    storage_path:
+      type: string
+      minLength: 1
+      maxLength: 1100
+      description: Exact display path, present on archive-list items.
+RecordingStorage:
+  type: object
+  additionalProperties: false
+  required: [kind, directory, user_visible]
+  properties:
+    kind: {enum: [private, addon_config, media, share, custom]}
+    directory: {type: string, minLength: 1, maxLength: 1024}
+    user_visible: {type: boolean}
 RecordingList:
   type: object
   additionalProperties: false
-  required: [recordings]
+  required: [storage, recordings]
   properties:
+    storage:
+      $ref: "#/RecordingStorage"
     recordings:
       type: array
       maxItems: 4096

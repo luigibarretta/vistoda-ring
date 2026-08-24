@@ -197,10 +197,8 @@ async fn recording_inventory_is_private_and_empty_by_default() {
         .await
         .unwrap_or_else(|error| panic!("router failed: {error}"));
     assert_eq!(authenticated.status(), StatusCode::OK);
-    assert_eq!(
-        json(authenticated).await["recordings"],
-        serde_json::json!([])
-    );
+    let payload = json(authenticated).await;
+    assert_eq!(payload["recordings"], serde_json::json!([]));
 }
 
 #[tokio::test]
