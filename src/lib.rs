@@ -2,6 +2,7 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod error;
+mod http_observability;
 pub mod model;
 pub mod research;
 pub mod ring_api_canary;

@@ -9,7 +9,7 @@ canonical repository are Vistoda Ring and `vistoda-ring`.
 
 ## Current status
 
-Version `0.7.x` exposes bounded direct WebRTC and native PCMU relay APIs after the
+Version `0.8.x` exposes bounded direct WebRTC and native PCMU relay APIs after the
 owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
 adds native battery/status, volume and one-shot unlock contracts without a
 public listener. It also archives audio captured by an active Vistoda browser
@@ -69,6 +69,10 @@ native event-stream migration.
 
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.
+
+Every response carries a server-generated `x-request-id`. Failed requests log
+only that ID, method, normalized route, status, latency and a bounded error
+class; raw URIs, query values, bodies and authorization data are excluded.
 
 Recordings are produced only while a user-owned Vistoda WebRTC session is
 active. The browser mixes inbound audio and its microphone only when that

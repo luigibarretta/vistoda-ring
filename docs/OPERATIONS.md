@@ -142,4 +142,9 @@ second delete intentionally returns `204`.
 - invalid container, size or timestamps: stable `400` and no file;
 - browser upload interruption: no manifest is committed.
 
+Every HTTP 4xx/5xx response includes a server-generated `x-request-id`. The
+structured failure log contains only that ID, method, normalized route template,
+status, latency and a bounded error class. Raw URIs, query strings, bodies,
+authorization headers, aliases and client-supplied request IDs are never logged.
+
 Audio sessions accept one peer per alias and never authorize door actions.

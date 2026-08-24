@@ -4,10 +4,10 @@ use axum::{
     Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
+    middleware,
     routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
-use tower_http::trace::TraceLayer;
 
 use crate::{
     auth::require_bearer,
@@ -90,7 +90,10 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
         .merge(crate::ring_control_api::routes())
         .merge(crate::ring_relay_api::routes())
         .merge(crate::ring_recording_api::routes())
-        .layer(TraceLayer::new_for_http())
+        .fallback(|| async { StatusCode::NOT_FOUND })
+        .layer(middleware::from_fn(
+            crate::http_observability::observe_request,
+        ))
         .with_state(runtime)
 }
 

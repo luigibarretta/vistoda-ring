@@ -6,6 +6,12 @@ use axum::{
 use serde_json::json;
 use thiserror::Error;
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HttpErrorContext {
+    pub code: &'static str,
+    pub class: &'static str,
+}
+
 #[derive(Debug, Error)]
 pub enum BridgeError {
     #[error("configuration is invalid: {0}")]
@@ -51,26 +57,78 @@ pub enum BridgeError {
 
 impl IntoResponse for BridgeError {
     fn into_response(self) -> Response {
-        let (status, code) = match self {
-            Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
-            Self::DeviceNotFound => (StatusCode::NOT_FOUND, "device_not_found"),
-            Self::InvalidRequest(_) => (StatusCode::BAD_REQUEST, "invalid_request"),
-            Self::SessionBusy => (StatusCode::CONFLICT, "session_busy"),
-            Self::InvalidCredentials => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_auth"),
-            Self::InvalidOtp => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_otp"),
-            Self::EnrollmentBusy => (StatusCode::CONFLICT, "enrollment_busy"),
-            Self::EnrollmentExpired => (StatusCode::GONE, "enrollment_expired"),
-            Self::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
-            Self::UpstreamUnavailable => (StatusCode::BAD_GATEWAY, "upstream_unavailable"),
-            Self::RecordingNotFound => (StatusCode::NOT_FOUND, "recording_not_found"),
-            Self::Configuration(_)
-            | Self::UnsafeFixture(_)
-            | Self::Protocol(_)
-            | Self::VendorRejected { .. }
-            | Self::Transport(_, _)
-            | Self::Io(_)
-            | Self::Json(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
+        let (status, context) = match &self {
+            Self::Unauthorized => response(StatusCode::UNAUTHORIZED, "unauthorized", "auth"),
+            Self::DeviceNotFound => response(StatusCode::NOT_FOUND, "device_not_found", "routing"),
+            Self::InvalidRequest(_) => {
+                response(StatusCode::BAD_REQUEST, "invalid_request", "validation")
+            }
+            Self::SessionBusy => response(StatusCode::CONFLICT, "session_busy", "concurrency"),
+            Self::InvalidCredentials => response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_auth",
+                "provider_auth",
+            ),
+            Self::InvalidOtp => response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_otp",
+                "provider_auth",
+            ),
+            Self::EnrollmentBusy => {
+                response(StatusCode::CONFLICT, "enrollment_busy", "concurrency")
+            }
+            Self::EnrollmentExpired => {
+                response(StatusCode::GONE, "enrollment_expired", "lifecycle")
+            }
+            Self::RateLimited => response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "provider_limit",
+            ),
+            Self::UpstreamUnavailable => response(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unavailable",
+                "provider_availability",
+            ),
+            Self::RecordingNotFound => {
+                response(StatusCode::NOT_FOUND, "recording_not_found", "storage")
+            }
+            Self::Configuration(_) => response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "configuration",
+            ),
+            Self::UnsafeFixture(_) => {
+                response(StatusCode::INTERNAL_SERVER_ERROR, "internal", "fixture")
+            }
+            Self::Protocol(_) => {
+                response(StatusCode::INTERNAL_SERVER_ERROR, "internal", "protocol")
+            }
+            Self::VendorRejected { .. } => response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "provider_response",
+            ),
+            Self::Transport(_, _) => {
+                response(StatusCode::INTERNAL_SERVER_ERROR, "internal", "transport")
+            }
+            Self::Io(_) => response(StatusCode::INTERNAL_SERVER_ERROR, "internal", "io"),
+            Self::Json(_) => response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "serialization",
+            ),
         };
-        (status, Json(json!({ "error": code }))).into_response()
+        let mut response = (status, Json(json!({ "error": context.code }))).into_response();
+        response.extensions_mut().insert(context);
+        response
     }
+}
+
+const fn response(
+    status: StatusCode,
+    code: &'static str,
+    class: &'static str,
+) -> (StatusCode, HttpErrorContext) {
+    (status, HttpErrorContext { code, class })
 }
