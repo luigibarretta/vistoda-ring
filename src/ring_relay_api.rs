@@ -17,6 +17,7 @@ use crate::{
     api::Runtime,
     auth::require_bearer,
     ring_audio::SessionEndReason,
+    ring_audio_manager::RelayReservation,
     ring_relay_protocol::{
         ClientCommand, FRAME_BYTES, MAX_MESSAGE_BYTES, RelayStage, ended, error, parse, pong,
         session,
@@ -53,21 +54,21 @@ async fn upgrade_relay(
 }
 
 async fn serve(runtime: Arc<Runtime>, device: String, socket: WebSocket) {
-    let reservation = match runtime.audio.reserve_relay(device).await {
-        Ok(value) => value,
-        Err(BridgeError::SessionBusy) => {
-            reject(socket, "session_busy").await;
-            return;
-        }
-        Err(BridgeError::RateLimited) => {
-            reject(socket, "cooldown").await;
-            return;
-        }
-        Err(_) => {
-            reject(socket, "unavailable").await;
-            return;
-        }
-    };
+    match runtime.audio.reserve_relay(device).await {
+        Ok(reservation) => serve_reserved(runtime, reservation, socket).await,
+        Err(error) => reject(socket, rejection_code(&error)).await,
+    }
+}
+
+const fn rejection_code(error: &BridgeError) -> &'static str {
+    match error {
+        BridgeError::SessionBusy => "session_busy",
+        BridgeError::RateLimited => "cooldown",
+        _ => "unavailable",
+    }
+}
+
+async fn serve_reserved(runtime: Arc<Runtime>, reservation: RelayReservation, socket: WebSocket) {
     let session_id = reservation.id.to_string();
     let (mut sink, mut source) = socket.split();
     if sink
@@ -125,26 +126,37 @@ async fn serve(runtime: Arc<Runtime>, device: String, socket: WebSocket) {
             }
         }
     }
-    if !task_done {
-        if let Some(sender) = cancel_sender.take() {
-            let _ = sender.send(());
-        }
-        match tokio::time::timeout(STOP_TIMEOUT, &mut task).await {
-            Ok(Ok(worker_reason)) if reason == SessionEndReason::ConnectionEnded => {
-                reason = worker_reason;
-            }
-            Ok(_) => {}
-            Err(_) => {
-                task.abort();
-                reason = SessionEndReason::ConnectionEnded;
-            }
-        }
-    }
+    reason = stop_worker(task, cancel_sender.take(), task_done, reason).await;
     runtime.audio.finish_relay(reservation, reason).await;
     let _ = sink
         .send(Message::Text(ended(reason.as_str()).into()))
         .await;
     let _ = sink.close().await;
+}
+
+async fn stop_worker(
+    mut task: tokio::task::JoinHandle<SessionEndReason>,
+    cancel: Option<oneshot::Sender<()>>,
+    task_done: bool,
+    mut reason: SessionEndReason,
+) -> SessionEndReason {
+    if task_done {
+        return reason;
+    }
+    if let Some(sender) = cancel {
+        let _ = sender.send(());
+    }
+    match tokio::time::timeout(STOP_TIMEOUT, &mut task).await {
+        Ok(Ok(worker_reason)) if reason == SessionEndReason::ConnectionEnded => {
+            reason = worker_reason;
+        }
+        Ok(_) => {}
+        Err(_) => {
+            task.abort();
+            reason = SessionEndReason::ConnectionEnded;
+        }
+    }
+    reason
 }
 
 enum ClientResult {
