@@ -21,6 +21,7 @@
 | [0017](0017-home-assistant-app-packaging.md) | Home Assistant app packaging and discovery |
 | [0018](0018-privacy-safe-http-failure-correlation.md) | Privacy-safe HTTP failure correlation |
 | [0019](0019-selectable-recording-storage.md) | Selectable and observable recording storage |
+| [0020](0020-haos-network-recording-storage.md) | Fail-closed HAOS network recording storage |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.

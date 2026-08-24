@@ -29,6 +29,10 @@ fn home_assistant_app_is_private_discovered_and_multiarch() {
     assert!(runner.contains("RING_INTERCOM_RECORDING_STORAGE_KIND"));
     assert!(runner.contains("migrate_recordings"));
     assert!(storage.contains("cmp -s"));
+    assert!(storage.contains("stat -c %d"));
+    assert!(storage.contains("network|%s"));
+    assert!(runner.contains("require_live_network_mount"));
+    assert!(runner.contains("recording_network_mount"));
     assert!(runner.contains("/addon_configs/${app_slug}/recordings"));
     assert!(runner.contains("chown bridge:bridge \"${data_dir}\""));
     assert!(runner.contains("chmod 0600 \"${data_dir}/ring-session.json\""));

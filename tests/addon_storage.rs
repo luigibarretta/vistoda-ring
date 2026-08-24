@@ -44,6 +44,44 @@ fn conflicting_target_fails_without_removing_source() {
     assert_eq!(fs::read(source.join(name)).ok(), Some(b"source".to_vec()));
 }
 
+#[test]
+fn network_mount_contract_is_bounded_and_preserves_haos_usage() {
+    let media = storage_command(
+        ". \"$HELPER\"; storage_directory network /media/ring-archive; \
+         storage_api_kind network /media/ring-archive; \
+         storage_marker_value network /media/ring-archive",
+    );
+    assert!(media.status.success());
+    assert_eq!(
+        String::from_utf8(media.stdout).ok().as_deref(),
+        Some("/media/ring-archive/vistoda-ring\nmedia\nnetwork|/media/ring-archive\n")
+    );
+    let share = storage_command(
+        ". \"$HELPER\"; storage_directory_from_marker \
+         'network|/share/ring archive'; storage_api_kind network '/share/ring archive'",
+    );
+    assert!(share.status.success());
+    assert_eq!(
+        String::from_utf8(share.stdout).ok().as_deref(),
+        Some("/share/ring archive/vistoda-ring\nshare\n")
+    );
+}
+
+#[test]
+fn network_mount_contract_rejects_local_nested_and_traversal_paths() {
+    for path in [
+        "/data/ring-archive",
+        "/media/ring/archive",
+        "/share/../archive",
+        "/share/-archive",
+    ] {
+        let output = storage_command(&format!(
+            ". \"$HELPER\"; storage_directory network '{path}'"
+        ));
+        assert!(!output.status.success(), "accepted {path}");
+    }
+}
+
 fn migration(source: &Path, target: &Path) -> std::process::ExitStatus {
     let helper =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("packaging/home-assistant/recording-storage.sh");
@@ -56,4 +94,16 @@ fn migration(source: &Path, target: &Path) -> std::process::ExitStatus {
         .env("TARGET", target)
         .status()
         .unwrap_or_else(|error| panic!("migration process failed: {error}"))
+}
+
+fn storage_command(script: &str) -> std::process::Output {
+    let helper =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("packaging/home-assistant/recording-storage.sh");
+    Command::new("sh")
+        .arg("-eu")
+        .arg("-c")
+        .arg(script)
+        .env("HELPER", helper)
+        .output()
+        .unwrap_or_else(|error| panic!("storage process failed: {error}"))
 }

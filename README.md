@@ -9,7 +9,7 @@ canonical repository are Vistoda Ring and `vistoda-ring`.
 
 ## Current status
 
-Version `0.8.x` exposes bounded direct WebRTC and native PCMU relay APIs after the
+Version `0.10.x` exposes bounded direct WebRTC and native PCMU relay APIs after the
 owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
 adds native battery/status, volume and one-shot unlock contracts without a
 public listener. It also archives audio captured by an active Vistoda browser
@@ -79,10 +79,11 @@ active. The browser mixes inbound audio and its microphone only when that
 microphone is explicitly enabled, then uploads through Home Assistant's
 authenticated backend proxy. Files are atomic, individually capped at 8 MiB,
 retained for 30 days and capped to 512 MiB total. The managed app keeps private
-storage as the default and lets the user select app-config, media or share
-storage. The authenticated inventory reports the effective directory and exact
-per-recording path; standalone deployments can set separate runtime and display
-paths.
+storage as the default and lets the user select app-config, media, share or a
+live HAOS-managed NFS/Samba mount. Network paths are bounded to one Media or
+Share mount and fail closed when the mount is absent. The authenticated
+inventory reports the effective directory and exact per-recording path;
+standalone deployments can set separate runtime and display paths.
 
 See [`openapi.yaml`](openapi.yaml). Browsers must use an authenticated backend
 proxy; they never receive the bridge token.

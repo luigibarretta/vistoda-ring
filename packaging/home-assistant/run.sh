@@ -16,17 +16,27 @@ app_info="$(curl -fsS --retry 5 --retry-all-errors \
 app_hostname="$(printf '%s' "${app_info}" | jq -er '.data.hostname')"
 app_slug="$(printf '%s' "${app_info}" | jq -er '.data.slug')"
 storage_choice="$(jq -er '(.recording_storage // "private") | strings |
-    select(. == "private" or . == "addon_config" or . == "media" or . == "share")' \
+    select(. == "private" or . == "addon_config" or . == "media" or . == "share"
+      or . == "network")' \
     "${options_file}")"
-recording_dir="$(storage_directory "${storage_choice}")"
+network_mount="$(jq -er '(.recording_network_mount // "") | strings' "${options_file}")"
+if test "${storage_choice}" = network; then
+    require_live_network_mount "${network_mount}"
+fi
+recording_dir="$(storage_directory "${storage_choice}" "${network_mount}")"
 case "${storage_choice}" in
     private) recording_display_dir=/data/recordings ;;
     addon_config) recording_display_dir="/addon_configs/${app_slug}/recordings" ;;
     media) recording_display_dir=/media/vistoda-ring ;;
     share) recording_display_dir=/share/vistoda-ring ;;
+    network) recording_display_dir="${recording_dir}" ;;
 esac
+recording_storage_kind="$(storage_api_kind "${storage_choice}" "${network_mount}")"
 previous_storage="$(test -f "${storage_marker}" && cat "${storage_marker}" || printf private)"
-previous_dir="$(storage_directory "${previous_storage}")"
+case "${previous_storage}" in
+    network\|*) require_live_network_mount "${previous_storage#network|}" ;;
+esac
+previous_dir="$(storage_directory_from_marker "${previous_storage}")"
 migrate_recordings "${previous_dir}" "${recording_dir}"
 mkdir -p "${recording_dir}"
 chown bridge:bridge "${data_dir}"
@@ -45,7 +55,7 @@ if test -e "${data_dir}/ring-session.json"; then
     chmod 0600 "${data_dir}/ring-session.json"
 fi
 chmod 0600 "${token_file}" "${devices_file}"
-printf '%s\n' "${storage_choice}" >"${storage_marker}.new"
+storage_marker_value "${storage_choice}" "${network_mount}" >"${storage_marker}.new"
 chmod 0600 "${storage_marker}.new"
 mv "${storage_marker}.new" "${storage_marker}"
 
@@ -54,7 +64,7 @@ export RING_INTERCOM_DEVICES_FILE="${devices_file}"
 export RING_INTERCOM_SESSION_FILE="${data_dir}/ring-session.json"
 export RING_INTERCOM_RECORDING_DIR="${recording_dir}"
 export RING_INTERCOM_RECORDING_DISPLAY_DIR="${recording_display_dir}"
-export RING_INTERCOM_RECORDING_STORAGE_KIND="${storage_choice}"
+export RING_INTERCOM_RECORDING_STORAGE_KIND="${recording_storage_kind}"
 
 gosu bridge:bridge ring-intercom-bridge serve &
 child_pid=$!

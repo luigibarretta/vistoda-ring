@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.9.1
+  version: 0.10.0
   description: >-
     Private control-plane, direct WebRTC and bounded native PCMU relay contract
     for Ring Intercom Audio. Vendor credentials never leave the bridge.
