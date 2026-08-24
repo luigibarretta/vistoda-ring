@@ -21,5 +21,14 @@ captures, household audio, internal addresses or authentication responses.
   retention;
 - stop immediately on account lockout, throttling or unexpected device action.
 
-The bridge never owns door unlock. That remains with Home Assistant's supported
-Ring integration and its existing confirmation automation.
+## Door control
+
+As accepted in ADR 0012, the bridge owns a bearer-authenticated native unlock
+endpoint for an enrolled alias. It validates alias and authorization before
+provider access, issues one vendor command and performs no retry above the
+client's single authentication-refresh retry. Consumers must require an
+explicit destructive confirmation and must not retry an ambiguous result.
+
+Home Assistant may retain its supported Ring integration only as an explicit
+fallback. It must suppress that fallback whenever the native path may already
+have sent the command, preventing a possible double unlock.
