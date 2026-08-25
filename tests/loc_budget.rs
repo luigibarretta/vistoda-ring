@@ -5,7 +5,7 @@ use std::{
 };
 
 const MAX_LINES: usize = 250;
-const EXCLUDED_DIRECTORIES: &[&str] = &[".git", "target"];
+const EXCLUDED_DIRECTORIES: &[&str] = &[".git", "target", "vendor"];
 const MAINTAINED_SUFFIXES: &[&str] = &["json", "md", "rs", "sh", "toml", "yaml", "yml"];
 
 #[test]

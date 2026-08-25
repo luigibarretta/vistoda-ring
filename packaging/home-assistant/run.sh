@@ -54,6 +54,10 @@ if test -e "${data_dir}/ring-session.json"; then
     chown bridge:bridge "${data_dir}/ring-session.json"
     chmod 0600 "${data_dir}/ring-session.json"
 fi
+if test -e "${data_dir}/ring-push.json"; then
+    chown bridge:bridge "${data_dir}/ring-push.json"
+    chmod 0600 "${data_dir}/ring-push.json"
+fi
 chmod 0600 "${token_file}" "${devices_file}"
 storage_marker_value "${storage_choice}" "${network_mount}" >"${storage_marker}.new"
 chmod 0600 "${storage_marker}.new"
@@ -62,6 +66,7 @@ mv "${storage_marker}.new" "${storage_marker}"
 export RING_INTERCOM_API_TOKEN_FILE="${token_file}"
 export RING_INTERCOM_DEVICES_FILE="${devices_file}"
 export RING_INTERCOM_SESSION_FILE="${data_dir}/ring-session.json"
+export RING_INTERCOM_PUSH_FILE="${data_dir}/ring-push.json"
 export RING_INTERCOM_RECORDING_DIR="${recording_dir}"
 export RING_INTERCOM_RECORDING_DISPLAY_DIR="${recording_display_dir}"
 export RING_INTERCOM_RECORDING_STORAGE_KIND="${recording_storage_kind}"
@@ -76,7 +81,7 @@ stop_child() {
 trap stop_child INT TERM
 
 attempt=0
-until curl -fsS --max-time 2 http://127.0.0.1:8775/healthz >/dev/null; do
+until curl -fsS --max-time 2 http://127.0.0.1:8775/healthz >/dev/null 2>&1; do
     if ! kill -0 "${child_pid}" 2>/dev/null; then
         wait "${child_pid}"
     fi

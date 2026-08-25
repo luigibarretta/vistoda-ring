@@ -1,11 +1,12 @@
 FROM rust:1.96-bookworm@sha256:a339861ae23e9abb272cea45dfafde21760d2ce6577a70f8a926153677902663 AS builder
 WORKDIR /source
 COPY Cargo.toml Cargo.lock ./
+COPY vendor ./vendor
 COPY src ./src
 RUN cargo build --locked --release
 
 FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
-ARG VERSION=0.10.0
+ARG VERSION=0.11.0
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Vistoda Ring" \
       org.opencontainers.image.version="$VERSION" \

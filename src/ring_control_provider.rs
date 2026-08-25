@@ -126,7 +126,7 @@ impl RingClient {
         Ok(())
     }
 
-    async fn vendor_request(
+    pub(crate) async fn vendor_request(
         &self,
         method: Method,
         endpoint: String,
@@ -217,7 +217,7 @@ fn valid_provider_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn only_device(
+pub(super) fn only_device(
     mut devices: Vec<RingIntercomIdentity>,
 ) -> Result<RingIntercomIdentity, BridgeError> {
     if devices.len() != 1 {

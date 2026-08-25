@@ -1,0 +1,28 @@
+Events:
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+    - name: after
+      in: query
+      description: Omit to initialize at the live tail without replaying queued events.
+      schema: {type: integer, format: int64, minimum: 0}
+    - name: wait
+      in: query
+      description: Bounded long-poll duration in seconds.
+      schema: {type: integer, minimum: 0, maximum: 30, default: 0}
+  get:
+    operationId: getNativeEvents
+    security:
+      - bearerAuth: []
+    responses:
+      "200":
+        description: Events newer than the supplied cursor and current push connectivity.
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas.yaml#/PushEventBatch"
+      "400":
+        description: Invalid wait bound.
+      "401":
+        $ref: "../../openapi.yaml#/components/responses/Unauthorized"
+      "404":
+        description: Unknown alias.

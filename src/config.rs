@@ -13,6 +13,7 @@ pub struct BridgeConfig {
     pub api_token: Vec<u8>,
     pub devices: BTreeMap<String, DeviceConfig>,
     pub session_file: PathBuf,
+    pub push_file: PathBuf,
     pub recording_dir: PathBuf,
     pub recording_display_dir: String,
     pub recording_storage_kind: RecordingStorageKind,
@@ -36,6 +37,7 @@ impl BridgeConfig {
                     "RING_INTERCOM_SESSION_FILE",
                     "/data/ring-session.json",
                 ))
+                .with_push_file(path("RING_INTERCOM_PUSH_FILE", "/data/ring-push.json"))
                 .with_recording_dir(path("RING_INTERCOM_RECORDING_DIR", "/data/recordings"))
                 .with_recording_display(
                     value("RING_INTERCOM_RECORDING_DISPLAY_DIR", "/data/recordings"),
@@ -66,6 +68,7 @@ impl BridgeConfig {
             api_token,
             devices,
             session_file: PathBuf::from("/data/ring-session.json"),
+            push_file: PathBuf::from("/data/ring-push.json"),
             recording_dir: PathBuf::from("/data/recordings"),
             recording_display_dir: "/data/recordings".into(),
             recording_storage_kind: RecordingStorageKind::Private,
@@ -75,6 +78,12 @@ impl BridgeConfig {
     #[must_use]
     pub fn with_session_file(mut self, path: PathBuf) -> Self {
         self.session_file = path;
+        self
+    }
+
+    #[must_use]
+    pub fn with_push_file(mut self, path: PathBuf) -> Self {
+        self.push_file = path;
         self
     }
 

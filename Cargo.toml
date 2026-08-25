@@ -1,6 +1,6 @@
 [package]
 name = "ring-intercom-bridge"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.96"
 authors = ["Luigi Barretta"]
@@ -21,6 +21,7 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["json", "ws"] }
 clap = { version = "4.5", features = ["derive"] }
 futures-util = "0.3"
+fcm-push-listener-ring = { path = "vendor/fcm-push-listener-ring" }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 rtc = "0.20.2"
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
@@ -29,7 +30,8 @@ serde_json = "1"
 subtle = "2.6"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing"] }
-tokio = { version = "1.47", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.47", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = "0.1"
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }

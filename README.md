@@ -9,7 +9,7 @@ canonical repository are Vistoda Ring and `vistoda-ring`.
 
 ## Current status
 
-Version `0.10.x` exposes bounded direct WebRTC and native PCMU relay APIs after the
+Version `0.11.x` exposes bounded direct WebRTC and native PCMU relay APIs after the
 owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
 adds native battery/status, volume and one-shot unlock contracts without a
 public listener. It also archives audio captured by an active Vistoda browser
@@ -22,6 +22,9 @@ bounded audio canary; neither is invoked by the service. Direct HTTP sessions
 accept one fully gathered, audio-only PCMU offer, keep signaling alive for at
 most two minutes and close idempotently. A private WebSocket relay lets watchOS
 use the same audio through Home Assistant without WebRTC or bridge secrets.
+The bridge also owns a persistent Android FCM registration for native Intercom
+ding and unlock events. It exposes only a private cursor-based long poll;
+payloads, provider device IDs and registration keys never cross that boundary.
 
 The official Ring application provides two-way audio for Intercom Audio. The
 bridge combines that media path with bounded native status and control calls;
@@ -34,6 +37,7 @@ Ring cloud -> Rust provider -> session/media boundary
                               +-> WebRTC for HA browser
                               +-> receive-only audio for SceneTrove
                               +-> PCMU relay for native Apple clients
+                              +-> bounded native push-event cursor
 
 Vistoda browser -> authenticated HA proxy -> bounded private call archive
 
@@ -42,8 +46,9 @@ Static config -> authenticated capability API -> consumers
 
 Home Assistant may switch controls between its official Ring integration and
 the native bridge. Unlock is a one-shot command and is never retried by either
-consumer or bridge. Ding and unlock push events remain delegated during the
-native event-stream migration.
+consumer or bridge. Native ding and unlock push events are preferred; the
+official integration remains a deduplicated fallback until a real doorbell
+canary proves the owned event path end to end.
 
 ## API
 
@@ -55,6 +60,7 @@ native event-stream migration.
 | `GET /v1/devices/{alias}/status` | battery, online state, volumes and latest activity | bearer |
 | `POST /v1/devices/{alias}/unlock` | one-shot native door unlock | bearer |
 | `PATCH /v1/devices/{alias}/settings` | set exactly one bounded volume | bearer |
+| `GET /v1/devices/{alias}/events` | cursor/long-poll native ding and unlock events | bearer |
 | `POST /v1/enrollments` | start an explicit password/MFA enrollment | bearer |
 | `POST /v1/enrollments/{id}` | consume one SMS code and persist the session | bearer |
 | `DELETE /v1/enrollments/{id}` | idempotently discard pending secrets | bearer |
@@ -69,6 +75,11 @@ native event-stream migration.
 
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.
+
+Native push needs outbound HTTPS plus TCP/5228 to `mtalk.google.com`. Its
+registration and acknowledged persistent IDs are atomically stored as a 0600
+file. `/healthz` reports only whether the push socket is connected; Prometheus
+exports aggregate reconnect/error/event counters without payload or device IDs.
 
 Every response carries a server-generated `x-request-id`. Failed requests log
 only that ID, method, normalized route, status, latency and a bounded error

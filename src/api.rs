@@ -22,6 +22,7 @@ use crate::{
     },
     ring_metrics::RingMetrics,
     ring_provider::RingProvider,
+    ring_push_worker::RingPushService,
     ring_recording_manager::RingRecordings,
     ring_relay_metrics::RelayMetrics,
 };
@@ -34,6 +35,7 @@ pub struct Runtime {
     metrics: Arc<RingMetrics>,
     pub(crate) relay_metrics: Arc<RelayMetrics>,
     pub(crate) provider: Arc<RingProvider>,
+    pub(crate) push: Arc<RingPushService>,
 }
 
 impl Runtime {
@@ -44,6 +46,7 @@ impl Runtime {
         let relay_metrics = Arc::new(RelayMetrics::default());
         let audio = RingAudioSessions::production(Arc::clone(&provider), Arc::clone(&metrics));
         let recordings = RingRecordings::production(config.recording_dir.clone())?;
+        let push = Arc::new(RingPushService::new(config.push_file.clone()));
         Ok(Self {
             config,
             enrollment,
@@ -52,7 +55,12 @@ impl Runtime {
             metrics,
             relay_metrics,
             provider,
+            push,
         })
+    }
+
+    pub fn start_background(self: &Arc<Self>) {
+        self.push.start(Arc::clone(&self.provider));
     }
 }
 
@@ -61,6 +69,7 @@ struct Health<'a> {
     status: &'a str,
     phase: &'a str,
     version: &'a str,
+    push_connected: bool,
 }
 
 #[derive(Serialize)]
@@ -88,6 +97,7 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
             delete(delete_audio_session),
         )
         .merge(crate::ring_control_api::routes())
+        .merge(crate::ring_push_api::routes())
         .merge(crate::ring_relay_api::routes())
         .merge(crate::ring_recording_api::routes())
         .fallback(|| async { StatusCode::NOT_FOUND })
@@ -126,11 +136,12 @@ async fn cancel_enrollment(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn health() -> Json<Health<'static>> {
+async fn health(State(runtime): State<Arc<Runtime>>) -> Json<Health<'static>> {
     Json(Health {
         status: "ok",
         phase: "verified",
         version: env!("CARGO_PKG_VERSION"),
+        push_connected: runtime.push.connected(),
     })
 }
 
@@ -143,9 +154,10 @@ async fn prometheus_metrics(
             "text/plain; version=0.0.4; charset=utf-8",
         )],
         format!(
-            "{}{}",
+            "{}{}{}",
             runtime.metrics.render(),
-            runtime.relay_metrics.render()
+            runtime.relay_metrics.render(),
+            runtime.push.metrics()
         ),
     )
 }

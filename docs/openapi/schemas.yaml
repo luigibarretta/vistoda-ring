@@ -37,7 +37,7 @@ EnrollmentVerify:
 Health:
   type: object
   additionalProperties: false
-  required: [status, phase, version]
+  required: [status, phase, version, push_connected]
   properties:
     status:
       const: ok
@@ -45,6 +45,8 @@ Health:
       const: verified
     version:
       type: string
+    push_connected:
+      type: boolean
 Device:
   type: object
   additionalProperties: false
@@ -157,3 +159,24 @@ RecordingList:
       maxItems: 4096
       items:
         $ref: "#/RecordingItem"
+PushEvent:
+  type: object
+  additionalProperties: false
+  required: [sequence, event_type, occurred_at]
+  properties:
+    sequence: {type: integer, format: int64, minimum: 1}
+    event_type: {enum: [ding, intercom_unlock]}
+    occurred_at: {type: integer, format: int64, minimum: 0}
+PushEventBatch:
+  type: object
+  additionalProperties: false
+  required: [events, next_sequence, generation, connected]
+  properties:
+    events:
+      type: array
+      maxItems: 128
+      items:
+        $ref: "#/PushEvent"
+    next_sequence: {type: integer, format: int64, minimum: 0}
+    generation: {type: string, format: uuid}
+    connected: {type: boolean}
