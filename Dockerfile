@@ -1,4 +1,7 @@
 FROM rust:1.96-bookworm@sha256:a339861ae23e9abb272cea45dfafde21760d2ce6577a70f8a926153677902663 AS builder
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /source
 COPY Cargo.toml Cargo.lock ./
 COPY vendor ./vendor
