@@ -6,13 +6,12 @@ readonly options_file=/data/options.json
 readonly token_file=/data/api-token
 readonly devices_file=/data/devices.json
 readonly storage_marker=/data/recording-storage
+. /usr/local/lib/vistoda-app-bootstrap
 . /usr/local/lib/vistoda-recording-storage
 
 umask 077
-test -n "${SUPERVISOR_TOKEN:-}" || exit 1
-app_info="$(curl -fsS --retry 5 --retry-all-errors \
-    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-    http://supervisor/addons/self/info)"
+vistoda_require_supervisor_token
+app_info="$(vistoda_supervisor_app_info)"
 app_hostname="$(printf '%s' "${app_info}" | jq -er '.data.hostname')"
 app_slug="$(printf '%s' "${app_info}" | jq -er '.data.slug')"
 storage_choice="$(jq -er '(.recording_storage // "private") | strings |
@@ -39,26 +38,18 @@ esac
 previous_dir="$(storage_directory_from_marker "${previous_storage}")"
 migrate_recordings "${previous_dir}" "${recording_dir}"
 mkdir -p "${recording_dir}"
-chown bridge:bridge "${data_dir}"
+vistoda_prepare_data_dir bridge:bridge "${data_dir}"
 
 alias_name="$(jq -er '.alias | strings | select(test("^[A-Za-z0-9_-]+$"))' "${options_file}")"
-if ! test -f "${token_file}" || ! grep -Eq '^[0-9a-f]{64}$' "${token_file}"; then
-    od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"${token_file}"
-fi
+vistoda_ensure_hex_token "${token_file}" bridge:bridge ''
 jq -n --arg alias "${alias_name}" \
     '{($alias): {kind: "ring_intercom_audio"}}' >"${devices_file}"
-chown bridge:bridge "${token_file}" "${devices_file}"
+chown bridge:bridge "${devices_file}"
 chown -R bridge:bridge "${recording_dir}"
 chmod 0700 "${recording_dir}"
-if test -e "${data_dir}/ring-session.json"; then
-    chown bridge:bridge "${data_dir}/ring-session.json"
-    chmod 0600 "${data_dir}/ring-session.json"
-fi
-if test -e "${data_dir}/ring-push.json"; then
-    chown bridge:bridge "${data_dir}/ring-push.json"
-    chmod 0600 "${data_dir}/ring-push.json"
-fi
-chmod 0600 "${token_file}" "${devices_file}"
+vistoda_secure_file bridge:bridge "${data_dir}/ring-session.json"
+vistoda_secure_file bridge:bridge "${data_dir}/ring-push.json"
+chmod 0600 "${devices_file}"
 storage_marker_value "${storage_choice}" "${network_mount}" >"${storage_marker}.new"
 chmod 0600 "${storage_marker}.new"
 mv "${storage_marker}.new" "${storage_marker}"
@@ -71,24 +62,8 @@ export RING_INTERCOM_RECORDING_DIR="${recording_dir}"
 export RING_INTERCOM_RECORDING_DISPLAY_DIR="${recording_display_dir}"
 export RING_INTERCOM_RECORDING_STORAGE_KIND="${recording_storage_kind}"
 
-gosu bridge:bridge ring-intercom-bridge serve &
-child_pid=$!
-
-stop_child() {
-    kill -TERM "${child_pid}" 2>/dev/null || true
-    wait "${child_pid}" 2>/dev/null || true
-}
-trap stop_child INT TERM
-
-attempt=0
-until curl -fsS --max-time 2 http://127.0.0.1:8775/healthz >/dev/null 2>&1; do
-    if ! kill -0 "${child_pid}" 2>/dev/null; then
-        wait "${child_pid}"
-    fi
-    attempt=$((attempt + 1))
-    test "${attempt}" -lt 30 || exit 1
-    sleep 1
-done
+vistoda_start_child gosu bridge:bridge ring-intercom-bridge serve
+vistoda_wait_for_health http://127.0.0.1:8775/healthz 30 1
 
 private_url="http://${app_hostname}:8775"
 jq -n \
@@ -99,9 +74,6 @@ jq -n \
     --rawfile api_token "${token_file}" \
     '{service: $service, config: {provider: $provider, url: $url,
       alias: $alias, api_token: ($api_token | gsub("\\s"; "")), managed_app: true}}' |
-    curl -fsS --retry 5 --retry-all-errors \
-        -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-        -H 'Content-Type: application/json' \
-        --data-binary @- http://supervisor/discovery >/dev/null
+    vistoda_publish_discovery
 
-wait "${child_pid}"
+vistoda_wait_child

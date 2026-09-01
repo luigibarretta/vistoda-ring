@@ -24,6 +24,7 @@ RUN apt-get update \
     && useradd --uid 10001 --gid bridge --no-create-home --shell /usr/sbin/nologin bridge
 COPY --from=builder /source/target/release/ring-intercom-bridge /usr/local/bin/
 COPY packaging/home-assistant/run.sh /usr/local/bin/vistoda-app-run
+COPY packaging/home-assistant/vistoda-app-bootstrap.sh /usr/local/lib/vistoda-app-bootstrap
 COPY packaging/home-assistant/recording-storage.sh /usr/local/lib/vistoda-recording-storage
 EXPOSE 8775
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
