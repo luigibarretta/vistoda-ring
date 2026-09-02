@@ -120,7 +120,7 @@ graph and enforced by the production builder image.
 Every maintained source or documentation file is limited to 250 lines. Python,
 JavaScript and TypeScript sources are rejected by the repository test suite.
 The Home Assistant bootstrap is vendored from
-[`vistoda-provider-kit`](https://git.luigibarretta.com/luigibarretta/vistoda-provider-kit)
+[`lib-vistoda-provider-kit`](https://git.luigibarretta.com/luigibarretta/lib-vistoda-provider-kit)
 at the commit in `dependencies/vistoda-provider-kit.sha` and verified byte-for-byte in CI.
 
 ## Security
