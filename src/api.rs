@@ -97,6 +97,7 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
             delete(delete_audio_session),
         )
         .merge(crate::ring_control_api::routes())
+        .merge(crate::ring_history_api::routes())
         .merge(crate::ring_push_api::routes())
         .merge(crate::ring_relay_api::routes())
         .merge(crate::ring_recording_api::routes())

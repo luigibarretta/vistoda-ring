@@ -239,9 +239,10 @@ fn invalidate_auth(state: &mut ClientState) {
 const fn is_unauthorized(error: &BridgeError) -> bool {
     matches!(error, BridgeError::VendorRejected { status: 401, .. })
 }
-
 #[path = "ring_control_provider.rs"]
 mod controls;
+#[path = "ring_history_provider.rs"]
+mod history;
 #[path = "ring_push_provider.rs"]
 mod push;
 #[cfg(test)]

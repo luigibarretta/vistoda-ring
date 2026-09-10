@@ -1,5 +1,4 @@
 use reqwest::Method;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use zeroize::Zeroizing;
 
@@ -13,18 +12,6 @@ use crate::{
 };
 
 const CONTROL_BODY_LIMIT: usize = 64 * 1024;
-const EVENTS_BODY_LIMIT: usize = 512 * 1024;
-
-#[derive(Deserialize)]
-struct EventEnvelope {
-    #[serde(default)]
-    events: Vec<ActivityEvent>,
-}
-
-#[derive(Deserialize)]
-struct ActivityEvent {
-    created_at: String,
-}
 
 impl RingClient {
     pub async fn device_status(&self) -> Result<RingDeviceStatus, BridgeError> {
@@ -63,6 +50,7 @@ impl RingClient {
                 })),
                 Vec::new(),
                 "door unlock",
+                CONTROL_BODY_LIMIT,
             )
             .await?;
         let response = serde_json::from_slice::<UnlockResponse>(&body)?;
@@ -120,8 +108,15 @@ impl RingClient {
                     "a volume value is required".into(),
                 ));
             };
-        self.vendor_request(method, endpoint, body, query, "volume update")
-            .await?;
+        self.vendor_request(
+            method,
+            endpoint,
+            body,
+            query,
+            "volume update",
+            CONTROL_BODY_LIMIT,
+        )
+        .await?;
         tracing::info!(setting, value, "Ring Intercom volume updated");
         Ok(())
     }
@@ -133,6 +128,7 @@ impl RingClient {
         json_body: Option<Value>,
         query: Vec<(String, String)>,
         operation: &'static str,
+        response_limit: usize,
     ) -> Result<Zeroizing<Vec<u8>>, BridgeError> {
         let mut endpoint = reqwest::Url::parse(&endpoint)
             .map_err(|_| BridgeError::Protocol("control URL is invalid".into()))?;
@@ -161,7 +157,7 @@ impl RingClient {
                 continue;
             }
             drop(state);
-            return checked_body(response, operation, CONTROL_BODY_LIMIT).await;
+            return checked_body(response, operation, response_limit).await;
         }
         Err(BridgeError::Protocol("control retry was exhausted".into()))
     }
@@ -170,51 +166,14 @@ impl RingClient {
         &self,
         device: &RingIntercomIdentity,
     ) -> Result<Option<i64>, BridgeError> {
-        let location = device
-            .location_id()
-            .filter(|value| valid_provider_id(value))
-            .ok_or_else(|| BridgeError::Protocol("Ring location is unavailable".into()))?;
-        let endpoint = format!(
-            "{}/locations/{location}/devices/{}/events?limit=20",
-            self.endpoints.client_api,
-            device.id()
-        );
-        let mut state = self.state.lock().await;
-        self.ensure_authenticated(&mut state).await?;
-        self.ensure_registered(&mut state).await?;
-        let response = self
-            .http
-            .get(endpoint)
-            .bearer_auth(access_value(&state)?)
-            .header("hardware_id", state.session.hardware_id().to_string())
-            .header(reqwest::header::USER_AGENT, USER_AGENT)
-            .send()
-            .await
-            .map_err(|error| BridgeError::Transport("activity history", error))?;
-        drop(state);
-        let body = checked_body(response, "activity history", EVENTS_BODY_LIMIT).await?;
-        let events = serde_json::from_slice::<EventEnvelope>(&body)?.events;
-        events
-            .iter()
-            .map(|event| {
-                time::OffsetDateTime::parse(
-                    &event.created_at,
-                    &time::format_description::well_known::Rfc3339,
-                )
-                .map(time::OffsetDateTime::unix_timestamp)
-                .map_err(|_| BridgeError::Protocol("Ring activity timestamp is invalid".into()))
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(|values| values.into_iter().max())
+        Ok(self
+            .activity_for_device(device, 20, None)
+            .await?
+            .0
+            .into_iter()
+            .map(|event| event.occurred_at)
+            .max())
     }
-}
-
-fn valid_provider_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 pub(super) fn only_device(

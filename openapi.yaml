@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.11.0
+  version: 0.12.0
   description: >-
     Private control-plane, direct WebRTC and bounded native PCMU relay contract
     for Ring Intercom Audio. Vendor credentials never leave the bridge.
@@ -150,6 +150,8 @@ paths:
     $ref: "./docs/openapi/control-paths.yaml#/Settings"
   /v1/devices/{device}/events:
     $ref: "./docs/openapi/event-paths.yaml#/Events"
+  /v1/devices/{device}/history:
+    $ref: "./docs/openapi/history-paths.yaml#/History"
   /v1/devices/{device}/audio/sessions/{session}:
     $ref: "./docs/openapi/audio-paths.yaml#/Session"
   /v1/devices/{device}/recordings:
@@ -195,3 +197,5 @@ components:
       $ref: "./docs/openapi/schemas.yaml#/RecordingList"
     PushEventBatch:
       $ref: "./docs/openapi/schemas.yaml#/PushEventBatch"
+    HistoryPage:
+      $ref: "./docs/openapi/schemas.yaml#/HistoryPage"

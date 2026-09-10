@@ -15,6 +15,8 @@ mod ring_control_api;
 pub mod ring_enrollment;
 mod ring_enrollment_provider;
 mod ring_enrollment_support;
+pub mod ring_history;
+mod ring_history_api;
 mod ring_http;
 pub mod ring_media_canary;
 #[cfg(test)]

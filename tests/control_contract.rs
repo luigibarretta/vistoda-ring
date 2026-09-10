@@ -32,6 +32,7 @@ fn app() -> axum::Router {
 async fn native_status_and_controls_require_auth_before_provider_access() {
     for (method, path, body) in [
         ("GET", "/v1/devices/entrance/status", ""),
+        ("GET", "/v1/devices/entrance/history", ""),
         ("POST", "/v1/devices/entrance/unlock", ""),
         (
             "PATCH",

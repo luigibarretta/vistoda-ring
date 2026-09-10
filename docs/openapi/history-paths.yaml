@@ -1,0 +1,24 @@
+History:
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+    - name: limit
+      in: query
+      schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+    - name: cursor
+      in: query
+      description: Opaque cursor returned by the previous page.
+      schema: {type: string, pattern: "^[0-9]{1,32}$"}
+  get:
+    operationId: getRingHistory
+    security: [{bearerAuth: []}]
+    responses:
+      "200":
+        description: One bounded provider page plus safe device and Location names.
+        content:
+          application/json:
+            schema:
+              $ref: "./schemas.yaml#/HistoryPage"
+      "400": {description: Invalid limit or cursor.}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias.}
+      "502": {description: Ring activity history is unavailable.}

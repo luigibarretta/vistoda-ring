@@ -61,6 +61,7 @@ canary proves the owned event path end to end.
 | `POST /v1/devices/{alias}/unlock` | one-shot native door unlock | bearer |
 | `PATCH /v1/devices/{alias}/settings` | set exactly one bounded volume | bearer |
 | `GET /v1/devices/{alias}/events` | cursor/long-poll native ding and unlock events | bearer |
+| `GET /v1/devices/{alias}/history` | paginated Ring event history and safe identity | bearer |
 | `POST /v1/enrollments` | start an explicit password/MFA enrollment | bearer |
 | `POST /v1/enrollments/{id}` | consume one SMS code and persist the session | bearer |
 | `DELETE /v1/enrollments/{id}` | idempotently discard pending secrets | bearer |

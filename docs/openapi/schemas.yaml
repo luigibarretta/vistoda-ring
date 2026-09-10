@@ -180,3 +180,30 @@ PushEventBatch:
     next_sequence: {type: integer, format: int64, minimum: 0}
     generation: {type: string, format: uuid}
     connected: {type: boolean}
+HistoryIdentity:
+  type: object
+  additionalProperties: false
+  required: [device_name, location_name, city]
+  properties:
+    device_name: {type: string, minLength: 1, maxLength: 128}
+    location_name: {type: string, minLength: 1, maxLength: 128}
+    city: {type: [string, "null"], minLength: 1, maxLength: 128}
+HistoryEvent:
+  type: object
+  additionalProperties: false
+  required: [event_id, event_type, occurred_at]
+  properties:
+    event_id: {type: string, minLength: 1, maxLength: 128}
+    event_type: {enum: [unlock, live_view, ding, motion, activity]}
+    occurred_at: {type: integer, format: int64, minimum: 0}
+HistoryPage:
+  type: object
+  additionalProperties: false
+  required: [identity, events, next_cursor]
+  properties:
+    identity: {$ref: "#/HistoryIdentity"}
+    events:
+      type: array
+      maxItems: 50
+      items: {$ref: "#/HistoryEvent"}
+    next_cursor: {type: [string, "null"], pattern: "^[0-9]{1,32}$"}

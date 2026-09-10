@@ -4,6 +4,7 @@ use std::sync::{Arc, atomic::Ordering};
 mod support;
 
 use crate::ring_control::VolumeUpdate;
+use crate::ring_history::RingHistoryEventType;
 use support::{MockState, assert_session_token, test_client};
 
 #[tokio::test]
@@ -88,6 +89,22 @@ async fn native_status_includes_battery_volumes_and_activity() {
     assert_eq!(status.mic_volume, Some(10));
     assert_eq!(status.voice_volume, Some(9));
     assert_eq!(status.last_activity, Some(1_786_795_500));
+}
+
+#[tokio::test]
+async fn history_exposes_provider_identity_and_cursor_without_credentials() {
+    let harness = test_client(Arc::new(MockState::default())).await;
+    let page = harness
+        .client
+        .history(2, None)
+        .await
+        .unwrap_or_else(|error| panic!("history failed: {error}"));
+    assert_eq!(page.identity.device_name, "Synthetic Entrance Intercom");
+    assert_eq!(page.identity.location_name, "Home");
+    assert_eq!(page.identity.city.as_deref(), Some("Casoria"));
+    assert_eq!(page.events[0].event_type, RingHistoryEventType::Unlock);
+    assert_eq!(page.events[1].event_type, RingHistoryEventType::LiveView);
+    assert_eq!(page.next_cursor.as_deref(), Some("7323267080901445808"));
 }
 
 #[tokio::test]

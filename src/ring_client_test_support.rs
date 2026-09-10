@@ -9,11 +9,12 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -60,7 +61,8 @@ pub async fn test_client(state: Arc<MockState>) -> TestHarness {
         .route("/oauth", post(oauth))
         .route("/session", post(register_session))
         .route("/devices", get(discover))
-        .route("/locations/loc-1/devices/42/events", get(events))
+        .route("/devices/v1/locations", get(locations))
+        .route("/doorbots/42/history", get(events))
         .merge(controls::routes())
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -177,16 +179,40 @@ async fn discover(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Re
     .into_response()
 }
 
-async fn events(headers: HeaderMap) -> Response {
+#[derive(Deserialize)]
+struct EventQuery {
+    limit: u8,
+    older_than: Option<String>,
+}
+
+async fn events(headers: HeaderMap, Query(query): Query<EventQuery>) -> Response {
     if !valid_bearer(&headers) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    Json(json!({"events": [
-        {"ding_id_str": "synthetic-1", "created_at": "2026-08-15T12:00:00Z",
-         "state": "completed"},
-        {"ding_id_str": "synthetic-2", "created_at": "2026-08-15T12:05:00Z",
-         "state": "timed_out"}
-    ]}))
+    if query.limit > 50
+        || query
+            .older_than
+            .as_deref()
+            .is_some_and(|value| value != "7323267080901445808")
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    Json(json!([
+        {"id": 7_330_963_245_622_279_024_u64, "created_at": "2026-08-15T12:00:00Z",
+         "state": "completed", "kind": "key_access"},
+        {"id": 7_323_267_080_901_445_808_u64, "created_at": "2026-08-15T12:05:00Z",
+         "state": "timed_out", "kind": "on_demand"}
+    ]))
+    .into_response()
+}
+
+async fn locations(headers: HeaderMap) -> Response {
+    if !valid_bearer(&headers) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    Json(json!({"user_locations": [{
+        "location_id": "loc-1", "name": "Home", "address": {"city": "Casoria"}
+    }]}))
     .into_response()
 }
 

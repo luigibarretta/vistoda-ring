@@ -4,6 +4,8 @@ use serde_json::json;
 use super::{RingClient, controls::only_device};
 use crate::{BridgeError, ring_protocol::API_VERSION};
 
+const PUSH_BODY_LIMIT: usize = 64 * 1024;
+
 impl RingClient {
     pub async fn register_push_token(&self, token: &str) -> Result<(), BridgeError> {
         if token.len() < 32
@@ -29,6 +31,7 @@ impl RingClient {
             })),
             Vec::new(),
             "push token registration",
+            PUSH_BODY_LIMIT,
         )
         .await?;
         Ok(())
@@ -46,6 +49,7 @@ impl RingClient {
             None,
             Vec::new(),
             "push event subscription",
+            PUSH_BODY_LIMIT,
         )
         .await?;
         Ok(device.id().to_string())
