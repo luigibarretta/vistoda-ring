@@ -35,39 +35,36 @@ struct ActiveSession {
     done: watch::Receiver<bool>,
     requested_end: Arc<AtomicUsize>,
 }
-
 struct SessionTask {
     id: Uuid,
     mode: AudioMode,
     started_at: Instant,
     requested_end: Arc<AtomicUsize>,
     offer: String,
+    expected_device_id: Option<String>,
     ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
     cancel: oneshot::Receiver<()>,
     done: watch::Sender<bool>,
 }
-
 #[derive(Default)]
 struct SessionState {
     active: BTreeMap<Uuid, ActiveSession>,
 }
-
 pub struct RelayReservation {
     pub id: Uuid,
     permit: SessionPermit,
     started_at: Instant,
 }
-
 #[async_trait]
 pub trait SessionRunner: Send + Sync {
     async fn run(
         &self,
         offer_sdp: String,
+        expected_device_id: Option<String>,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         cancel: oneshot::Receiver<()>,
     ) -> SessionEndReason;
 }
-
 #[derive(Clone)]
 pub struct RingAudioSessions {
     state: Arc<Mutex<SessionState>>,
@@ -127,6 +124,7 @@ impl RingAudioSessions {
             started_at,
             requested_end,
             offer: request.offer_sdp,
+            expected_device_id: request.expected_device_id,
             ready: ready_tx,
             cancel: cancel_rx,
             done: done_tx,
@@ -221,7 +219,9 @@ impl RingAudioSessions {
         let metrics = Arc::clone(&self.metrics);
         let gate = self.gate.clone();
         tokio::spawn(async move {
-            let runner_reason = runner.run(task.offer, task.ready, task.cancel).await;
+            let runner_reason = runner
+                .run(task.offer, task.expected_device_id, task.ready, task.cancel)
+                .await;
             let reason = requested_reason(&task.requested_end).unwrap_or(runner_reason);
             let mut state = state.lock().await;
             let permit = state.active.remove(&task.id).map(|active| active.permit);
@@ -246,4 +246,4 @@ impl RingAudioSessions {
 
 #[cfg(test)]
 #[path = "ring_audio_manager_tests.rs"]
-mod tests;
+pub mod tests;

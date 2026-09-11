@@ -1,6 +1,6 @@
 use reqwest::Method;
 
-use super::{RingClient, controls::only_device};
+use super::RingClient;
 use crate::{
     BridgeError,
     ring_history::{
@@ -12,10 +12,37 @@ const HISTORY_BODY_LIMIT: usize = 512 * 1024;
 const LOCATION_BODY_LIMIT: usize = 256 * 1024;
 
 impl RingClient {
+    pub async fn intercom_inventory(
+        &self,
+    ) -> Result<crate::ring_inventory::IntercomInventory, BridgeError> {
+        let devices = self.discover_intercoms().await?;
+        let locations = self
+            .vendor_request(
+                Method::GET,
+                format!("{}/devices/v1/locations", self.endpoints.api_root),
+                None,
+                Vec::new(),
+                "location discovery",
+                LOCATION_BODY_LIMIT,
+            )
+            .await
+            .ok();
+        crate::ring_inventory::inventory(devices, locations.as_ref().map(|body| body.as_slice()))
+    }
+
     pub async fn history(
         &self,
         limit: u8,
         cursor: Option<&str>,
+    ) -> Result<RingHistoryPage, BridgeError> {
+        self.history_expected(limit, cursor, None).await
+    }
+
+    pub async fn history_expected(
+        &self,
+        limit: u8,
+        cursor: Option<&str>,
+        expected: Option<&str>,
     ) -> Result<RingHistoryPage, BridgeError> {
         if !(1..=50).contains(&limit) {
             return Err(BridgeError::InvalidRequest(
@@ -25,7 +52,7 @@ impl RingClient {
         if let Some(value) = cursor {
             validate_cursor(value)?;
         }
-        let device = only_device(self.discover_intercoms().await?)?;
+        let device = self.verified_device(expected).await?;
         self.history_for_device(&device, limit, cursor).await
     }
 
@@ -53,6 +80,7 @@ impl RingClient {
         let (events, next_cursor) = self.activity_for_device(device, limit, cursor).await?;
         Ok(RingHistoryPage {
             identity: RingHistoryIdentity {
+                device_id: device.id().to_string(),
                 device_name: device.description().to_owned(),
                 location_name,
                 city,

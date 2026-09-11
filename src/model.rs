@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct DeviceConfig {
     pub kind: DeviceKind,
+    #[serde(default)]
+    pub device_id: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]

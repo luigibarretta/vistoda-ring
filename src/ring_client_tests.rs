@@ -1,11 +1,87 @@
+// Harnesses own the mock server and credential directory for the whole test.
+#![allow(clippy::significant_drop_tightening)]
 use std::sync::{Arc, atomic::Ordering};
 
 #[path = "ring_client_test_support.rs"]
-mod support;
+pub mod support;
 
 use crate::ring_control::VolumeUpdate;
 use crate::ring_history::RingHistoryEventType;
 use support::{MockState, assert_session_token, test_client};
+
+#[tokio::test]
+async fn enrollment_waits_for_old_client_requests_and_resets_every_scoped_cache() {
+    let harness = test_client(Arc::new(MockState::default())).await;
+    let provider = crate::ring_provider::RingProvider::new(harness.session_path.clone());
+    let first = provider.scoped(Some(42));
+    let old = first
+        .client()
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    let old_state = Arc::clone(&old.state);
+    assert!(
+        tokio::time::timeout(
+            std::time::Duration::from_millis(5),
+            provider.enrollment_guard()
+        )
+        .await
+        .is_err()
+    );
+    drop(old);
+    let guard = provider.enrollment_guard().await;
+    provider.reset().await;
+    drop(guard);
+    let refreshed = first
+        .client()
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(!Arc::ptr_eq(&old_state, &refreshed.state));
+}
+
+#[tokio::test]
+async fn two_intercoms_keep_status_history_and_unlock_on_selected_device() {
+    let state = Arc::new(MockState {
+        additional_intercoms: 1,
+        ..MockState::default()
+    });
+    let harness = test_client(Arc::clone(&state)).await;
+    assert!(harness.client.device_status().await.is_err());
+    assert!(harness.client.unlock().await.is_err());
+    let first = harness.client.scoped(Some(42));
+    let second = harness.client.scoped(Some(43));
+    assert_eq!(
+        first
+            .device_status()
+            .await
+            .unwrap_or_else(|error| panic!("{error}"))
+            .device_id,
+        "42"
+    );
+    assert_eq!(
+        second
+            .device_status()
+            .await
+            .unwrap_or_else(|error| panic!("{error}"))
+            .device_id,
+        "43"
+    );
+    let history = second
+        .history(20, None)
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(history.identity.device_id, "43");
+    assert_eq!(history.events[0].event_id, "99");
+    assert!(second.unlock_expected(Some("42")).await.is_err());
+    assert_eq!(state.control_calls.load(Ordering::SeqCst), 0);
+    second
+        .unlock_expected(Some("43"))
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(state.last_control_device.load(Ordering::SeqCst), 43);
+    assert!(harness.client.scoped(Some(999)).unlock().await.is_err());
+    assert_eq!(state.control_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(state.oauth_calls.load(Ordering::SeqCst), 1);
+}
 
 #[tokio::test]
 async fn discovery_rotates_session_and_reuses_cached_auth() {
@@ -118,16 +194,19 @@ async fn native_unlock_and_each_volume_use_bounded_vendor_contracts() {
         .unwrap_or_else(|error| panic!("unlock failed: {error}"));
     for update in [
         VolumeUpdate {
+            expected_device_id: None,
             doorbell_volume: Some(7),
             mic_volume: None,
             voice_volume: None,
         },
         VolumeUpdate {
+            expected_device_id: None,
             doorbell_volume: None,
             mic_volume: Some(8),
             voice_volume: None,
         },
         VolumeUpdate {
+            expected_device_id: None,
             doorbell_volume: None,
             mic_volume: None,
             voice_volume: Some(7),

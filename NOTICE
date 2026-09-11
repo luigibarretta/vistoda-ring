@@ -3,3 +3,8 @@ Copyright 2026 Luigi Barretta
 
 This project is unofficial and is not affiliated with, endorsed by, or
 sponsored by Ring LLC or Amazon.com, Inc. Ring is a trademark of its owner.
+
+Includes the Apache-2.0 Vistoda Provider Kit bootstrap, Copyright 2026 Luigi
+Barretta, and the vendored fcm-push-listener-ring dependency under its original
+license in vendor/fcm-push-listener-ring/LICENSE. Image distributions preserve
+project notices and dependency license files under /usr/share/doc/vistoda.

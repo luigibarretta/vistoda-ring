@@ -48,11 +48,12 @@ async fn upload_recording(
         .ok_or_else(|| BridgeError::InvalidRequest("recording content type is required".into()))?;
     Ok((
         StatusCode::CREATED,
-        Json(
-            runtime
-                .recordings
-                .commit(query.started_at, query.ended_at, content_type, &body)?,
-        ),
+        Json(runtime.device(&device)?.recordings.commit(
+            query.started_at,
+            query.ended_at,
+            content_type,
+            &body,
+        )?),
     ))
 }
 
@@ -62,9 +63,10 @@ async fn recordings(
     headers: HeaderMap,
 ) -> Result<Json<RecordingList>, BridgeError> {
     authorize_device(&runtime, &headers, &device)?;
-    let directory = runtime.config.recording_display_dir.clone();
+    let directory = runtime.device(&device)?.recording_display_dir.clone();
     let kind = runtime.config.recording_storage_kind;
     let recordings = runtime
+        .device(&device)?
         .recordings
         .list()?
         .into_iter()
@@ -92,7 +94,7 @@ async fn media(
 ) -> Result<impl IntoResponse, BridgeError> {
     authorize_device(&runtime, &headers, &device)?;
     let id = uuid::Uuid::parse_str(&recording).map_err(|_| BridgeError::RecordingNotFound)?;
-    let (content_type, body) = runtime.recordings.media(id)?;
+    let (content_type, body) = runtime.device(&device)?.recordings.media(id)?;
     Ok(([("content-type", content_type)], body))
 }
 
@@ -103,7 +105,7 @@ async fn delete_recording(
 ) -> Result<StatusCode, BridgeError> {
     authorize_device(&runtime, &headers, &device)?;
     if let Ok(id) = uuid::Uuid::parse_str(&recording) {
-        runtime.recordings.delete(id)?;
+        runtime.device(&device)?.recordings.delete(id)?;
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -114,8 +116,6 @@ fn authorize_device(
     device: &str,
 ) -> Result<(), BridgeError> {
     require_bearer(headers, &runtime.config.api_token)?;
-    if !runtime.config.devices.contains_key(device) {
-        return Err(BridgeError::DeviceNotFound);
-    }
+    runtime.device(device)?;
     Ok(())
 }

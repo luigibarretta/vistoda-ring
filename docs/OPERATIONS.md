@@ -3,7 +3,7 @@
 ## Current phase
 
 The HTTP service advertises verified audio after repeated owned-device canaries.
-Calls remain on demand, authenticated, single-device and limited to 120 seconds.
+Calls remain on demand, authenticated, device-scoped and limited to 120 seconds.
 
 ## Configuration
 
@@ -12,14 +12,16 @@ Calls remain on demand, authenticated, single-device and limited to 120 seconds.
 | `RING_INTERCOM_BIND_HOST` | `0.0.0.0` | listener address |
 | `RING_INTERCOM_BIND_PORT` | `8775` | listener port |
 | `RING_INTERCOM_API_TOKEN_FILE` | `/run/secrets/api_token` | bearer token file, at least 32 bytes |
-| `RING_INTERCOM_DEVICES_FILE` | `/config/devices.json` | alias-only device kinds |
+| `RING_INTERCOM_DEVICES_FILE` | `/config/devices.json` | bootstrap aliases or explicit physical bindings |
 | `RING_INTERCOM_SESSION_FILE` | `/data/ring-session.json` | dedicated rotating session |
 | `RING_INTERCOM_RECORDING_DIR` | `/data/recordings` | private bounded call archive |
 | `RING_INTERCOM_RECORDING_DISPLAY_DIR` | `/data/recordings` | user-facing absolute archive path |
 | `RING_INTERCOM_RECORDING_STORAGE_KIND` | `private` | `private`, `addon_config`, `media`, `share` or `custom` |
 
-The devices file contains no Ring ID or credential. Only
-`ring_intercom_audio` is accepted during the research phase.
+The devices file contains no credential. `ring_intercom_audio` is the supported
+kind; advanced mappings can include a positive `device_id`. Normal app setup
+uses account discovery after login, not manual ID copying. See
+[multiple intercoms](MULTI_INTERCOM.md) for automatic aliases and archive handling.
 
 ## Dedicated Ring session
 
@@ -94,7 +96,10 @@ bridge never retries rejected credentials, MFA or HTTP 429 responses.
 ## Safe smoke test
 
 1. Create a 32-byte random API token outside Git.
-2. Copy `deploy/devices.example.json` to a non-repository runtime directory.
+2. Copy `deploy/devices.example.json` to a non-repository runtime directory;
+   replace every example ID with a verified Ring device ID and keep only the
+   intended entrances. See [multiple intercoms](MULTI_INTERCOM.md) for the
+   Home Assistant options, single-device compatibility and archive migration.
 3. Bind to loopback.
 4. Query `/healthz` without authentication.
 5. Query `/v1/devices` with the bearer token and require both audio capabilities

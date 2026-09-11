@@ -1,5 +1,10 @@
 {
   "entrance": {
-    "kind": "ring_intercom_audio"
+    "kind": "ring_intercom_audio",
+    "device_id": 100000001
+  },
+  "side-gate": {
+    "kind": "ring_intercom_audio",
+    "device_id": 100000002
   }
 }

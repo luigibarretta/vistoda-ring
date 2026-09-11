@@ -23,6 +23,7 @@ fn app_with_recordings(recording_dir: std::path::PathBuf) -> axum::Router {
     let devices = BTreeMap::from([(
         "entrance".into(),
         DeviceConfig {
+            device_id: Some(42),
             kind: DeviceKind::RingIntercomAudio,
         },
     )]);

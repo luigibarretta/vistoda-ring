@@ -9,7 +9,7 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -37,10 +37,15 @@ pub struct MockState {
     pub oauth_calls: AtomicUsize,
     pub session_calls: AtomicUsize,
     pub discovery_calls: AtomicUsize,
+    pub ticket_calls: AtomicUsize,
     pub first_discovery_unauthorized: bool,
+    pub unavailable_discoveries: AtomicUsize,
     pub reject_oauth: bool,
     pub rate_limit_discovery: bool,
     pub control_calls: AtomicUsize,
+    pub additional_intercoms: usize,
+    pub last_control_device: AtomicUsize,
+    pub location_status: u16,
 }
 
 pub struct TestHarness {
@@ -60,9 +65,10 @@ pub async fn test_client(state: Arc<MockState>) -> TestHarness {
     let app = Router::new()
         .route("/oauth", post(oauth))
         .route("/session", post(register_session))
-        .route("/devices", get(discover))
+        .route("/devices", get(controls::discover))
+        .route("/tickets", post(controls::ticket))
         .route("/devices/v1/locations", get(locations))
-        .route("/doorbots/42/history", get(events))
+        .route("/doorbots/{device}/history", get(events))
         .merge(controls::routes())
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -83,6 +89,7 @@ pub async fn test_client(state: Arc<MockState>) -> TestHarness {
         .unwrap_or_else(|error| panic!("session chmod failed: {error}"));
     let base = format!("http://{address}");
     let endpoints = Endpoints {
+        stream_ticket: format!("{base}/tickets"),
         oauth: format!("{base}/oauth"),
         session: format!("{base}/session"),
         discovery: format!("{base}/devices"),
@@ -157,37 +164,25 @@ async fn register_session(
     Json(json!({ "profile": { "id": 1 } })).into_response()
 }
 
-async fn discover(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Response {
-    let call = state.discovery_calls.fetch_add(1, Ordering::SeqCst);
-    if state.first_discovery_unauthorized && call == 0 {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-    if state.rate_limit_discovery {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    }
-    if !valid_bearer(&headers) {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-    Json(json!({
-        "other": [
-            {"id": 42, "kind": "intercom_handset_audio", "description": "Synthetic Entrance Intercom",
-             "location_id": "loc-1", "battery_life": "73", "alerts": {"connection": "online"},
-             "settings": {"doorbell_volume": 6, "mic_volume": 10, "voice_volume": 9}},
-            {"id": 43, "kind": "third_party_garage_door_opener", "description": "Synthetic Other"}
-        ]
-    }))
-    .into_response()
-}
-
 #[derive(Deserialize)]
 struct EventQuery {
     limit: u8,
     older_than: Option<String>,
 }
 
-async fn events(headers: HeaderMap, Query(query): Query<EventQuery>) -> Response {
+async fn events(
+    Path(device): Path<u64>,
+    headers: HeaderMap,
+    Query(query): Query<EventQuery>,
+) -> Response {
     if !valid_bearer(&headers) {
         return StatusCode::BAD_REQUEST.into_response();
+    }
+    if device == 43 {
+        return Json(
+            json!([{"id": 99, "created_at": "2026-08-15T12:00:00Z", "kind": "key_access"}]),
+        )
+        .into_response();
     }
     if query.limit > 50
         || query
@@ -206,9 +201,14 @@ async fn events(headers: HeaderMap, Query(query): Query<EventQuery>) -> Response
     .into_response()
 }
 
-async fn locations(headers: HeaderMap) -> Response {
+async fn locations(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Response {
     if !valid_bearer(&headers) {
         return StatusCode::BAD_REQUEST.into_response();
+    }
+    if state.location_status != 0 {
+        return StatusCode::from_u16(state.location_status)
+            .unwrap_or(StatusCode::BAD_GATEWAY)
+            .into_response();
     }
     Json(json!({"user_locations": [{
         "location_id": "loc-1", "name": "Home", "address": {"city": "Casoria"}

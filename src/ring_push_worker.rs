@@ -11,7 +11,7 @@ use fcm_push_listener::{Message, MessageStream, new_heartbeat_ack, register};
 use futures_util::StreamExt;
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::OnceCell;
+use tokio::sync::watch;
 
 use crate::{
     error::BridgeError,
@@ -38,19 +38,19 @@ enum PushError {
 
 pub struct RingPushService {
     store: Arc<RingPushStore>,
-    events: Arc<RingPushEvents>,
+    events: crate::ring_push_queues::RingPushQueues,
     metrics: Arc<RingPushMetrics>,
-    provider_device_id: OnceCell<String>,
+    reload: watch::Sender<u64>,
     started: AtomicBool,
 }
 
 impl RingPushService {
-    pub fn new(path: PathBuf) -> Self {
+    pub fn new(path: PathBuf, devices: impl Iterator<Item = Option<u64>>) -> Self {
         Self {
             store: Arc::new(RingPushStore::new(path)),
-            events: Arc::new(RingPushEvents::default()),
+            events: crate::ring_push_queues::RingPushQueues::new(devices),
             metrics: Arc::new(RingPushMetrics::default()),
-            provider_device_id: OnceCell::new(),
+            reload: watch::channel(0).0,
             started: AtomicBool::new(false),
         }
     }
@@ -67,12 +67,27 @@ impl RingPushService {
         self.metrics.connected()
     }
 
+    pub fn reload(&self) {
+        self.reload
+            .send_modify(|value| *value = value.wrapping_add(1));
+    }
+
     pub fn metrics(&self) -> String {
         self.metrics.render()
     }
 
-    pub fn events(&self) -> Arc<RingPushEvents> {
-        Arc::clone(&self.events)
+    pub fn events(&self, device_id: Option<u64>) -> Result<Arc<RingPushEvents>, BridgeError> {
+        self.events.get(device_id)
+    }
+
+    pub fn include_devices(
+        &self,
+        devices: impl Iterator<Item = Option<u64>>,
+    ) -> Result<(), BridgeError> {
+        if self.events.include(devices)? {
+            self.reload();
+        }
+        Ok(())
     }
 
     async fn run(self: Arc<Self>, provider: Arc<RingProvider>) {
@@ -117,19 +132,17 @@ impl RingPushService {
             self.persist(&state).await?;
             state
         };
-        let device_id = self
-            .provider_device_id
-            .get_or_try_init(|| async {
-                let client = provider.client().await?;
-                client
-                    .register_push_token(&state.registration.fcm_token)
-                    .await?;
-                let device_id = client.subscribe_push_events().await?;
-                self.metrics.registered();
-                Ok::<String, PushError>(device_id)
-            })
-            .await?
-            .clone();
+        let mut reload = self.reload.subscribe();
+        let client = provider.client().await?;
+        client
+            .register_push_token(&state.registration.fcm_token)
+            .await?;
+        let mut device_id = Vec::new();
+        for id in self.events.ids()? {
+            device_id.push(client.scoped(id).subscribe_push_events().await?);
+        }
+        drop(client);
+        self.metrics.registered();
         let checked = state
             .registration
             .gcm
@@ -146,7 +159,14 @@ impl RingPushService {
             .map_err(|_| PushError::Fcm("connection"))?;
         let mut stream = MessageStream::wrap(connection, &state.registration.keys);
         self.metrics.set_connected(true);
-        while let Some(message) = stream.next().await {
+        loop {
+            let message = tokio::select! {
+                message = stream.next() => message,
+                _ = reload.changed() => return Ok(()),
+            };
+            let Some(message) = message else {
+                break;
+            };
             match message.map_err(|_| PushError::Fcm("message decoding"))? {
                 Message::HeartbeatPing => stream
                     .write_all(&new_heartbeat_ack())
@@ -165,17 +185,25 @@ impl RingPushService {
         Ok(())
     }
 
-    async fn handle_message(&self, device_id: &str, body: &[u8]) {
+    async fn handle_message(&self, device_ids: &[String], body: &[u8]) {
         let Some(event) = parse_push_event(body) else {
             self.metrics.ignored();
             return;
         };
-        if event.device_id != device_id {
+        if !device_ids.contains(&event.device_id) {
             self.metrics.ignored();
             return;
         }
         let occurred_at = event.occurred_at.unwrap_or_else(unix_timestamp);
-        self.events.publish(event.event_type, occurred_at).await;
+        let id = event.device_id.parse::<u64>().ok();
+        if let Ok(queue) = self.events.get(id) {
+            queue.publish(event.event_type, occurred_at).await;
+        }
+        if device_ids.len() == 1
+            && let Ok(queue) = self.events.get(None)
+        {
+            queue.publish(event.event_type, occurred_at).await;
+        }
         self.metrics.received(event.event_type, occurred_at);
         tracing::info!(event_type = ?event.event_type, "Ring push event received");
     }
@@ -208,6 +236,10 @@ fn fcm_client() -> Result<reqwest::Client, PushError> {
         .build()
         .map_err(|_| PushError::Fcm("HTTP client setup"))
 }
+
+#[cfg(test)]
+#[path = "ring_push_multidevice_tests.rs"]
+mod multi_tests;
 
 fn unix_timestamp() -> i64 {
     time::OffsetDateTime::now_utc().unix_timestamp()

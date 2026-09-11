@@ -20,6 +20,7 @@ const START_TIMEOUT: Duration = Duration::from_secs(25);
 pub struct RelayWorker {
     provider: Arc<RingProvider>,
     metrics: Arc<RelayMetrics>,
+    expected_device_id: String,
 }
 
 struct ActiveCall {
@@ -41,8 +42,16 @@ enum Stage {
 type Stages = BTreeSet<Stage>;
 
 impl RelayWorker {
-    pub const fn new(provider: Arc<RingProvider>, metrics: Arc<RelayMetrics>) -> Self {
-        Self { provider, metrics }
+    pub const fn new(
+        provider: Arc<RingProvider>,
+        metrics: Arc<RelayMetrics>,
+        expected_device_id: String,
+    ) -> Self {
+        Self {
+            provider,
+            metrics,
+            expected_device_id,
+        }
     }
 
     pub async fn run(
@@ -63,6 +72,12 @@ impl RelayWorker {
         ring_audio: mpsc::Sender<Vec<u8>>,
         client_audio: mpsc::Receiver<Vec<u8>>,
     ) -> Result<ActiveCall, BridgeError> {
+        let grant = self
+            .provider
+            .client()
+            .await?
+            .prepare_audio_call_expected(Some(&self.expected_device_id))
+            .await?;
         let peer = MediaPeer::new_relay(ring_audio, Arc::clone(&self.metrics)).await?;
         let offer = match peer.offer().await {
             Ok(value) => value,
@@ -71,7 +86,6 @@ impl RelayWorker {
                 return Err(error);
             }
         };
-        let grant = self.provider.client().await?.prepare_audio_call().await?;
         let mut signaling = match Signaling::connect(&grant.ticket, grant.device_id).await {
             Ok(value) => value,
             Err(error) => {

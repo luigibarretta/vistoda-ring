@@ -26,6 +26,7 @@ Session:
     security: [{bearerAuth: []}]
     parameters:
       - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+      - $ref: "./history-paths.yaml#/ExpectedDevice"
       - name: session
         in: path
         required: true
@@ -43,8 +44,11 @@ Relay:
       payloads. Client binary messages are exactly 160-byte, 20 ms PCMU frames.
       Text messages follow vistoda.pcmu.v1. The bridge supplies silence when no
       client microphone frame is available and closes after at most 120 seconds.
+      expected_device_id is required for legacy unbound aliases and verified before the audio grant.
     security: [{bearerAuth: []}]
-    parameters: [{$ref: "../../openapi.yaml#/components/parameters/DeviceAlias"}]
+    parameters:
+      - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+      - $ref: "./history-paths.yaml#/ExpectedDevice"
     responses:
       "101": {description: Native audio relay upgraded}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}

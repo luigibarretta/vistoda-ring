@@ -9,7 +9,7 @@ canonical repository are Vistoda Ring and `vistoda-ring`.
 
 ## Current status
 
-Version `0.11.x` exposes bounded direct WebRTC and native PCMU relay APIs after the
+The provider exposes bounded direct WebRTC and native PCMU relay APIs after the
 owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
 adds native battery/status, volume and one-shot unlock contracts without a
 public listener. It also archives audio captured by an active Vistoda browser
@@ -24,7 +24,10 @@ most two minutes and close idempotently. A private WebSocket relay lets watchOS
 use the same audio through Home Assistant without WebRTC or bridge secrets.
 The bridge also owns a persistent Android FCM registration for native Intercom
 ding and unlock events. It exposes only a private cursor-based long poll;
-payloads, provider device IDs and registration keys never cross that boundary.
+raw vendor payloads and registration keys never cross that boundary. The private
+inventory exposes only routed aliases, physical IDs and safe selection labels.
+Normal Home Assistant setup discovers multiple intercoms after login without
+manual ID copying; see [multiple intercoms](docs/MULTI_INTERCOM.md).
 
 The official Ring application provides two-way audio for Intercom Audio. The
 bridge combines that media path with bounded native status and control calls;
@@ -104,6 +107,15 @@ The native relay accepts exactly 160-byte client PCMU frames and emits bounded
 Ring PCMU payloads. It sends silence while the microphone is muted, shares
 direct-session exclusivity and cooldown, and expires after 120 seconds.
 
+## Installation and recovery guide
+
+Provider selection, prerequisites, discovery recovery, account reconnection,
+updates, rollback, backups, restore and uninstall are documented in the shared
+[English guide](https://github.com/luigibarretta/vistoda-addons/blob/main/OPERATIONS.md)
+and [Italian guide](https://github.com/luigibarretta/vistoda-addons/blob/main/OPERATIONS.it.md).
+Published images include licenses and notices under `/usr/share/doc/vistoda`.
+Only exact version tags passing quality, security and provenance gates are released.
+
 ## Development
 
 ```bash
@@ -144,6 +156,7 @@ See [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
 - [`docs/PLAN.md`](docs/PLAN.md) — staged delivery gates;
 - [`docs/RESEARCH.md`](docs/RESEARCH.md) — verified facts and unknowns;
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — safe local operation;
+- [`docs/MULTI_INTERCOM.md`](docs/MULTI_INTERCOM.md) — explicit entrance bindings and safe archive migration;
 - [`docs/adr/`](docs/adr/) — durable architectural decisions.
 
 Licensed under Apache-2.0.

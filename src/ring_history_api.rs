@@ -15,6 +15,7 @@ use crate::{
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HistoryQuery {
+    expected_device_id: Option<String>,
     #[serde(default = "default_limit")]
     limit: u8,
     cursor: Option<String>,
@@ -31,17 +32,18 @@ async fn history(
     headers: HeaderMap,
 ) -> Result<Json<RingHistoryPage>, BridgeError> {
     require_bearer(&headers, &runtime.config.api_token)?;
-    if !runtime.config.devices.contains_key(&device) {
-        return Err(BridgeError::DeviceNotFound);
-    }
-    Ok(Json(
-        runtime
-            .provider
-            .client()
-            .await?
-            .history(query.limit, query.cursor.as_deref())
-            .await?,
-    ))
+    let target = runtime.device(&device)?;
+    let expected = target
+        .expected_id(query.expected_device_id.as_deref())?
+        .to_string();
+    let page = target
+        .provider
+        .client()
+        .await?
+        .history_expected(query.limit, query.cursor.as_deref(), Some(&expected))
+        .await?;
+    drop(target);
+    Ok(Json(page))
 }
 
 const fn default_limit() -> u8 {

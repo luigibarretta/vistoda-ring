@@ -15,7 +15,27 @@ use crate::{
 
 const OFFER: &str = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 0\r\na=sendrecv\r\n";
 
-struct FakeRunner;
+pub struct FakeRunner;
+
+#[tokio::test]
+async fn deleting_a_session_on_another_device_runtime_cannot_stop_it() {
+    let first = RingAudioSessions::new(Arc::new(FakeRunner));
+    let second = RingAudioSessions::new(Arc::new(FakeRunner));
+    let created = first
+        .start("front".into(), request())
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    let id = Uuid::parse_str(&created.session_id).unwrap_or_else(|error| panic!("{error}"));
+    second
+        .delete(id, SessionEndReason::UserStop)
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(first.start("front".into(), request()).await.is_err());
+    first
+        .delete(id, SessionEndReason::UserStop)
+        .await
+        .unwrap_or_else(|error| panic!("{error}"));
+}
 
 struct DelayedStopRunner(Arc<AtomicBool>);
 
@@ -24,6 +44,7 @@ impl SessionRunner for FakeRunner {
     async fn run(
         &self,
         _offer_sdp: String,
+        _expected_device_id: Option<String>,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         cancel: oneshot::Receiver<()>,
     ) -> SessionEndReason {
@@ -44,6 +65,7 @@ impl SessionRunner for DelayedStopRunner {
     async fn run(
         &self,
         _offer_sdp: String,
+        _expected_device_id: Option<String>,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         cancel: oneshot::Receiver<()>,
     ) -> SessionEndReason {
@@ -58,8 +80,9 @@ impl SessionRunner for DelayedStopRunner {
     }
 }
 
-fn request() -> AudioSessionRequest {
+pub fn request() -> AudioSessionRequest {
     AudioSessionRequest {
+        expected_device_id: None,
         offer_sdp: OFFER.into(),
         mode: AudioMode::Listen,
         ice_gathering_ms: Some(250),

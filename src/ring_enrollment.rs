@@ -35,7 +35,7 @@ pub struct VerifyEnrollment {
 #[derive(Serialize)]
 pub struct EnrollmentStarted {
     enrollment_id: String,
-    next_step: &'static str,
+    pub(crate) next_step: &'static str,
     expires_in: u64,
 }
 

@@ -33,10 +33,14 @@ impl SessionRunner for ProductionSessionRunner {
     async fn run(
         &self,
         offer_sdp: String,
+        expected_device_id: Option<String>,
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         mut cancel: oneshot::Receiver<()>,
     ) -> SessionEndReason {
-        let (mut signaling, negotiated) = match self.negotiate(&offer_sdp).await {
+        let (mut signaling, negotiated) = match self
+            .negotiate(&offer_sdp, expected_device_id.as_deref())
+            .await
+        {
             Ok(value) => value,
             Err(error) => {
                 let _ = ready.send(Err(error));
@@ -80,8 +84,17 @@ impl SessionRunner for ProductionSessionRunner {
 }
 
 impl ProductionSessionRunner {
-    async fn negotiate(&self, offer: &str) -> Result<(Signaling, NegotiatedAudio), BridgeError> {
-        let grant = self.provider.client().await?.prepare_audio_call().await?;
+    async fn negotiate(
+        &self,
+        offer: &str,
+        expected: Option<&str>,
+    ) -> Result<(Signaling, NegotiatedAudio), BridgeError> {
+        let grant = self
+            .provider
+            .client()
+            .await?
+            .prepare_audio_call_expected(expected)
+            .await?;
         let mut signaling = Signaling::connect(&grant.ticket, grant.device_id).await?;
         signaling.offer(offer).await?;
         let negotiated = match self.collect(&mut signaling).await {

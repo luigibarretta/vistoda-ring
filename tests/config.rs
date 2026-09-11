@@ -9,10 +9,32 @@ use ring_intercom_bridge::{
 const TOKEN: &[u8] = b"01234567890123456789012345678901";
 
 #[test]
+fn multiple_intercoms_require_distinct_physical_bindings() {
+    for ids in [[Some(42), Some(43)], [None, Some(43)], [Some(42), Some(42)]] {
+        let devices = ["front", "back"]
+            .into_iter()
+            .zip(ids)
+            .map(|(alias, device_id)| {
+                (
+                    alias.into(),
+                    DeviceConfig {
+                        kind: DeviceKind::RingIntercomAudio,
+                        device_id,
+                    },
+                )
+            })
+            .collect();
+        let config = BridgeConfig::new("127.0.0.1".into(), 8775, TOKEN.to_vec(), devices);
+        assert_eq!(config.is_ok(), ids == [Some(42), Some(43)]);
+    }
+}
+
+#[test]
 fn traversal_like_aliases_are_rejected() {
     let devices = BTreeMap::from([(
         "../entrance".into(),
         DeviceConfig {
+            device_id: None,
             kind: DeviceKind::RingIntercomAudio,
         },
     )]);
@@ -24,6 +46,7 @@ fn recording_display_path_is_bounded_and_absolute() {
     let devices = BTreeMap::from([(
         "entrance".into(),
         DeviceConfig {
+            device_id: None,
             kind: DeviceKind::RingIntercomAudio,
         },
     )]);
@@ -47,6 +70,7 @@ fn unsupported_video_devices_are_rejected_during_research() {
     let devices = BTreeMap::from([(
         "entrance".into(),
         DeviceConfig {
+            device_id: None,
             kind: DeviceKind::RingIntercomVideo,
         },
     )]);
@@ -58,6 +82,7 @@ fn short_api_tokens_are_rejected() {
     let devices = BTreeMap::from([(
         "entrance".into(),
         DeviceConfig {
+            device_id: None,
             kind: DeviceKind::RingIntercomAudio,
         },
     )]);

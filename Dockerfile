@@ -8,8 +8,11 @@ COPY vendor ./vendor
 COPY src ./src
 RUN cargo build --locked --release
 
+COPY packaging/collect-licenses.sh /usr/local/bin/collect-licenses
+RUN sh /usr/local/bin/collect-licenses /licenses
+
 FROM debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241
-ARG VERSION=0.12.0
+ARG VERSION=0.13.0
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="Vistoda Ring" \
       org.opencontainers.image.version="$VERSION" \
@@ -21,6 +24,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 bridge \
     && useradd --uid 10001 --gid bridge --no-create-home --shell /usr/sbin/nologin bridge
+COPY --from=builder /licenses /usr/share/doc/vistoda/dependencies
+COPY LICENSE NOTICE /usr/share/doc/vistoda/
+COPY vendor/fcm-push-listener-ring/LICENSE /usr/share/doc/vistoda/fcm-push-listener-ring-LICENSE
 COPY --from=builder /source/target/release/ring-intercom-bridge /usr/local/bin/ring-intercom-bridge
 USER 10001:10001
 EXPOSE 8775

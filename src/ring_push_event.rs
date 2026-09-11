@@ -21,6 +21,8 @@ pub struct RingPushEvent {
 
 #[derive(Debug, Serialize)]
 pub struct RingPushEventBatch {
+    pub device_id: String,
+    pub cursor_reset: bool,
     pub events: Vec<RingPushEvent>,
     pub next_sequence: u64,
     pub generation: String,

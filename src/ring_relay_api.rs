@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use axum::{
     Router,
     extract::{
-        FromRequestParts, Path, Request, State, WebSocketUpgrade,
+        FromRequestParts, Path, Query, Request, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     response::{IntoResponse, Response},
@@ -33,16 +33,24 @@ pub fn routes() -> Router<Arc<Runtime>> {
     Router::new().route("/v1/devices/{device}/audio/relay", get(upgrade_relay))
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RelayQuery {
+    expected_device_id: Option<String>,
+}
+
+// The immutable runtime is moved into the upgrade callback, not retained locally.
+#[allow(clippy::significant_drop_tightening)]
 async fn upgrade_relay(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
+    Query(query): Query<RelayQuery>,
     request: Request,
 ) -> Result<Response, BridgeError> {
     let (mut parts, _body) = request.into_parts();
     require_bearer(&parts.headers, &runtime.config.api_token)?;
-    if !runtime.config.devices.contains_key(&device) {
-        return Err(BridgeError::DeviceNotFound);
-    }
+    let (target, physical) = runtime.audio_target(&device, query.expected_device_id.as_deref())?;
+    let expected = physical.to_string();
     let websocket = match WebSocketUpgrade::from_request_parts(&mut parts, &runtime).await {
         Ok(value) => value,
         Err(error) => return Ok(error.into_response()),
@@ -50,12 +58,17 @@ async fn upgrade_relay(
     Ok(websocket
         .max_message_size(MAX_MESSAGE_BYTES)
         .max_frame_size(MAX_MESSAGE_BYTES)
-        .on_upgrade(move |socket| serve(runtime, device, socket)))
+        .on_upgrade(move |socket| serve(runtime, target, expected, socket)))
 }
 
-async fn serve(runtime: Arc<Runtime>, device: String, socket: WebSocket) {
-    match runtime.audio.reserve_relay(device).await {
-        Ok(reservation) => serve_reserved(runtime, reservation, socket).await,
+async fn serve(
+    runtime: Arc<Runtime>,
+    target: Arc<crate::ring_device_runtime::RingDeviceRuntime>,
+    expected: String,
+    socket: WebSocket,
+) {
+    match target.audio.reserve_relay(expected.clone()).await {
+        Ok(reservation) => serve_reserved(runtime, target, expected, reservation, socket).await,
         Err(error) => reject(socket, rejection_code(&error)).await,
     }
 }
@@ -68,7 +81,13 @@ const fn rejection_code(error: &BridgeError) -> &'static str {
     }
 }
 
-async fn serve_reserved(runtime: Arc<Runtime>, reservation: RelayReservation, socket: WebSocket) {
+async fn serve_reserved(
+    runtime: Arc<Runtime>,
+    target: Arc<crate::ring_device_runtime::RingDeviceRuntime>,
+    expected: String,
+    reservation: RelayReservation,
+    socket: WebSocket,
+) {
     let session_id = reservation.id.to_string();
     let (mut sink, mut source) = socket.split();
     if sink
@@ -76,7 +95,7 @@ async fn serve_reserved(runtime: Arc<Runtime>, reservation: RelayReservation, so
         .await
         .is_err()
     {
-        runtime
+        target
             .audio
             .finish_relay(reservation, SessionEndReason::ConnectionEnded)
             .await;
@@ -86,12 +105,14 @@ async fn serve_reserved(runtime: Arc<Runtime>, reservation: RelayReservation, so
     let (client_sender, client_receiver) = mpsc::channel(CLIENT_QUEUE);
     let (stage_sender, mut stage_receiver) = mpsc::channel(2);
     let (cancel_sender, cancel_receiver) = oneshot::channel();
-    let worker = RelayWorker::new(
-        Arc::clone(&runtime.provider),
-        Arc::clone(&runtime.relay_metrics),
+    let mut task = tokio::spawn(
+        RelayWorker::new(
+            Arc::clone(&target.provider),
+            Arc::clone(&runtime.relay_metrics),
+            expected,
+        )
+        .run(ring_sender, client_receiver, stage_sender, cancel_receiver),
     );
-    let mut task =
-        tokio::spawn(worker.run(ring_sender, client_receiver, stage_sender, cancel_receiver));
     let mut cancel_sender = Some(cancel_sender);
     let mut task_done = false;
     let mut reason = SessionEndReason::ConnectionEnded;
@@ -102,7 +123,7 @@ async fn serve_reserved(runtime: Arc<Runtime>, reservation: RelayReservation, so
             }
             Some(stage) = stage_receiver.recv() => {
                 if stage == RelayStage::Active {
-                    runtime.audio.relay_started();
+                    target.audio.relay_started();
                     if sink.send(Message::Text(session("active", &session_id).into()))
                         .await.is_err() { break }
                 }
@@ -127,7 +148,7 @@ async fn serve_reserved(runtime: Arc<Runtime>, reservation: RelayReservation, so
         }
     }
     reason = stop_worker(task, cancel_sender.take(), task_done, reason).await;
-    runtime.audio.finish_relay(reservation, reason).await;
+    target.audio.finish_relay(reservation, reason).await;
     let _ = sink
         .send(Message::Text(ended(reason.as_str()).into()))
         .await;

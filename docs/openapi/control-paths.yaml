@@ -10,8 +10,9 @@ Status:
           application/json:
             schema:
               type: object
-              required: [battery, online, doorbell_volume, mic_volume, voice_volume, last_activity]
+              required: [device_id, battery, online, doorbell_volume, mic_volume, voice_volume, last_activity]
               properties:
+                device_id: {$ref: "./schemas.yaml#/ExpectedDeviceId"}
                 battery: {type: [integer, "null"], minimum: 0, maximum: 100}
                 online: {type: boolean}
                 doorbell_volume: {type: [integer, "null"], minimum: 0, maximum: 8}
@@ -25,6 +26,14 @@ Unlock:
     operationId: unlockRingIntercom
     security: [{bearerAuth: []}]
     parameters: [{$ref: "../../openapi.yaml#/components/parameters/DeviceAlias"}]
+    requestBody:
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            properties:
+              expected_device_id: {$ref: "./schemas.yaml#/ExpectedDeviceId"}
     responses:
       "204": {description: One Ring unlock command was accepted}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
@@ -43,8 +52,10 @@ Settings:
             type: object
             additionalProperties: false
             minProperties: 1
-            maxProperties: 1
+            maxProperties: 2
+            description: Exactly one volume and an optional physical device pin.
             properties:
+              expected_device_id: {$ref: "./schemas.yaml#/ExpectedDeviceId"}
               doorbell_volume: {type: integer, minimum: 0, maximum: 8}
               mic_volume: {type: integer, minimum: 0, maximum: 11}
               voice_volume: {type: integer, minimum: 0, maximum: 11}

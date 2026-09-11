@@ -8,9 +8,14 @@ readonly devices_file=/data/devices.json
 readonly storage_marker=/data/recording-storage
 . /usr/local/lib/vistoda-app-bootstrap
 . /usr/local/lib/vistoda-recording-storage
+. /usr/local/lib/vistoda-device-config
 
 umask 077
 vistoda_require_supervisor_token
+devices_config="$(ring_device_config "${options_file}")" || {
+    vistoda_fail 'Check intercoms in app Configuration: use unique aliases and Ring device IDs. Leave the list empty only for the legacy single-intercom setup.'
+    exit 1
+}
 app_info="$(vistoda_supervisor_app_info)"
 app_hostname="$(printf '%s' "${app_info}" | jq -er '.data.hostname')"
 app_slug="$(printf '%s' "${app_info}" | jq -er '.data.slug')"
@@ -40,10 +45,11 @@ migrate_recordings "${previous_dir}" "${recording_dir}"
 mkdir -p "${recording_dir}"
 vistoda_prepare_data_dir bridge:bridge "${data_dir}"
 
-alias_name="$(jq -er '.alias | strings | select(test("^[A-Za-z0-9_-]+$"))' "${options_file}")"
+alias_name="$(jq -r '.alias // ""' "${options_file}")"
 vistoda_ensure_hex_token "${token_file}" bridge:bridge ''
-jq -n --arg alias "${alias_name}" \
-    '{($alias): {kind: "ring_intercom_audio"}}' >"${devices_file}"
+printf '%s\n' "${devices_config}" >"${devices_file}.new"
+chmod 0600 "${devices_file}.new"
+mv "${devices_file}.new" "${devices_file}"
 chown bridge:bridge "${devices_file}"
 chown -R bridge:bridge "${recording_dir}"
 chmod 0700 "${recording_dir}"
@@ -66,14 +72,19 @@ vistoda_start_child gosu bridge:bridge ring-intercom-bridge serve
 vistoda_wait_for_health http://127.0.0.1:8775/healthz 30 1
 
 private_url="http://${app_hostname}:8775"
+discovery_devices="$(ring_discovery_devices "${token_file}" "${devices_file}")"
 jq -n \
     --arg service media_bridge \
     --arg provider ring \
     --arg url "${private_url}" \
     --arg alias "${alias_name}" \
+    --argjson devices "${discovery_devices}" \
     --rawfile api_token "${token_file}" \
     '{service: $service, config: {provider: $provider, url: $url,
-      alias: $alias, api_token: ($api_token | gsub("\\s"; "")), managed_app: true}}' |
+      alias: (if $devices | has($alias) then $alias else ($devices | keys[0]) end),
+      aliases: ($devices | keys),
+      devices: ($devices | to_entries | map({alias: .key, device_id: .value.device_id})),
+      api_token: ($api_token | gsub("\\s"; "")), managed_app: true}}' |
     vistoda_publish_discovery
 
 vistoda_wait_child

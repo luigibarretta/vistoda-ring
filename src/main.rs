@@ -33,6 +33,10 @@ enum Command {
         seconds: u64,
     },
     ResearchApiCanary {
+        #[arg(long, default_value = "entrance")]
+        alias: String,
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+        expected_device_id: Option<u64>,
         #[arg(long, default_value = "http://127.0.0.1:8775/")]
         bridge_url: String,
         #[arg(long, default_value = "/run/secrets/api_token")]
@@ -65,10 +69,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             seconds,
         } => research_audio_canary(session_file, seconds).await,
         Command::ResearchApiCanary {
+            alias,
+            expected_device_id,
             bridge_url,
             api_token_file,
             seconds,
-        } => research_api_canary(bridge_url, api_token_file, seconds).await,
+        } => {
+            research_api_canary(
+                bridge_url,
+                api_token_file,
+                seconds,
+                alias,
+                expected_device_id,
+            )
+            .await
+        }
     }
 }
 
@@ -76,11 +91,16 @@ async fn research_api_canary(
     bridge_url: String,
     token_file: PathBuf,
     seconds: u64,
+    alias: String,
+    expected_device_id: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let expected_device_id = expected_device_id.map(|id| id.to_string());
     let evidence = run_api_canary(
         &bridge_url,
         &token_file,
         std::time::Duration::from_secs(seconds),
+        &alias,
+        expected_device_id.as_deref(),
     )
     .await?;
     let passed = evidence.passes_release_gate();
@@ -98,6 +118,7 @@ async fn research_audio_canary(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = RingClient::new(session_file)?;
     let grant = client.prepare_audio_call().await?;
+    drop(client);
     let evidence = run_audio_canary(grant, std::time::Duration::from_secs(seconds)).await?;
     let passed = evidence.passes_release_gate();
     println!("{}", serde_json::to_string(&evidence)?);
@@ -122,6 +143,8 @@ async fn healthcheck() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// Runtime is moved into the router; it must live for the complete server lifetime.
+#[allow(clippy::significant_drop_tightening)]
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let config = BridgeConfig::from_env().await?;
     let address = config.socket_address()?;
@@ -141,6 +164,7 @@ async fn research_discover(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let client = RingClient::new(session_file)?;
     let devices = client.discover_intercoms().await?;
+    drop(client);
     write_synthetic_discovery_fixture(&output, devices.len())?;
     tracing::info!(
         intercom_count = devices.len(),

@@ -64,27 +64,72 @@ storage_api_kind() {
     fi
 }
 
-migrate_recordings() {
+# Subshells keep recursive traversal state separate in both dash and BusyBox.
+copy_archive_tree() (
     source_dir="$1"
     target_dir="$2"
-    test "${source_dir}" != "${target_dir}" || return 0
-    mkdir -p "${source_dir}" "${target_dir}"
-    for source_file in "${source_dir}"/*; do
+    depth="$3"
+    ! test -L "${source_dir}" && ! test -L "${target_dir}" || return 1
+    test -d "${source_dir}" || return 1
+    mkdir -p "${target_dir}" || return 1
+    for source_file in "${source_dir}"/* "${source_dir}"/.[!.]* "${source_dir}"/..?*; do
+        ! test -L "${source_file}" || return 1
         test -e "${source_file}" || continue
-        test -f "${source_file}" && ! test -L "${source_file}" || return 1
         file_name="${source_file##*/}"
+        target_file="${target_dir}/${file_name}"
+        if test -d "${source_file}"; then
+            test "${depth}" -eq 0 || return 1
+            printf '%s' "${file_name}" | grep -Eq '^device-[1-9][0-9]{0,19}$' || return 1
+            copy_archive_tree "${source_file}" "${target_file}" 1 || return 1
+            continue
+        fi
+        test -f "${source_file}" || return 1
         printf '%s' "${file_name}" | grep -Eq \
             '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(json|mp4|webm)$' || return 1
-        target_file="${target_dir}/${file_name}"
+        ! test -L "${target_file}" || return 1
         if test -e "${target_file}"; then
-            test -f "${target_file}" && ! test -L "${target_file}" || return 1
+            test -f "${target_file}" || return 1
         else
-            cp -p "${source_file}" "${target_file}"
+            cp -p "${source_file}" "${target_file}" || return 1
         fi
         cmp -s "${source_file}" "${target_file}" || return 1
     done
-    for source_file in "${source_dir}"/*; do
+)
+
+retire_archive_tree() (
+    source_dir="$1"
+    target_dir="$2"
+    depth="$3"
+    ! test -L "${source_dir}" && ! test -L "${target_dir}" || return 1
+    for source_file in "${source_dir}"/* "${source_dir}"/.[!.]* "${source_dir}"/..?*; do
+        ! test -L "${source_file}" || return 1
         test -e "${source_file}" || continue
-        rm "${source_file}"
+        file_name="${source_file##*/}"
+        target_file="${target_dir}/${file_name}"
+        if test -d "${source_file}"; then
+            test "${depth}" -eq 0 || return 1
+            printf '%s' "${file_name}" | grep -Eq '^device-[1-9][0-9]{0,19}$' || return 1
+            retire_archive_tree "${source_file}" "${target_file}" 1 || return 1
+            rmdir "${source_file}" || return 1
+        else
+            test -f "${source_file}" && ! test -L "${target_file}" || return 1
+            printf '%s' "${file_name}" | grep -Eq \
+                '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(json|mp4|webm)$' || return 1
+            # A writer racing the stopped provider cannot make us discard new bytes.
+            cmp -s "${source_file}" "${target_file}" || return 1
+            rm "${source_file}" || return 1
+        fi
     done
-}
+)
+
+migrate_recordings() (
+    source_dir="$1"
+    target_dir="$2"
+    ! test -L "${source_dir}" && ! test -L "${target_dir}" || return 1
+    mkdir -p "${source_dir}" "${target_dir}" || return 1
+    test "$(stat -c '%d:%i' "${source_dir}")" != "$(stat -c '%d:%i' "${target_dir}")" || return 0
+    # Complete every directory copy before retiring any source file. Legacy
+    # flat files remain flat: never guess which physical entrance owns them.
+    copy_archive_tree "${source_dir}" "${target_dir}" 0 || return 1
+    retire_archive_tree "${source_dir}" "${target_dir}" 0
+)

@@ -1,0 +1,46 @@
+Intercoms:
+  get:
+    operationId: listEnrolledIntercoms
+    summary: List physical intercoms available to the enrolled Ring account
+    description: >-
+      Read-only cloud discovery refreshes local physical-ID route caches. Explicit
+      configured bindings are preserved; other devices receive intercom-ID aliases.
+      No media, settings or entrance controls are invoked. Account metadata and
+      credentials are never serialized. Location names may be null. Conflicting
+      configured aliases fail closed instead of being rebound.
+    security: [{bearerAuth: []}]
+    responses:
+      "200":
+        description: Bounded inventory ordered by numeric physical device ID
+        headers:
+          Cache-Control:
+            schema: {type: string, const: no-store}
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [intercoms]
+              properties:
+                intercoms:
+                  type: array
+                  maxItems: 32
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [alias, device_id, name, location_name]
+                    properties:
+                      alias:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                        description: Stable alias usable on all device-scoped routes
+                      device_id:
+                        type: string
+                        pattern: "^[1-9][0-9]{0,19}$"
+                        description: Numeric Ring ID represented losslessly as a string
+                      name: {type: string, minLength: 1, maxLength: 128}
+                      location_name: {type: [string, "null"], maxLength: 128}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "502":
+        description: Account enrollment or Ring device discovery is unavailable

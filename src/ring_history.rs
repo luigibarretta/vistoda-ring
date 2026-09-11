@@ -8,6 +8,7 @@ const MAX_LOCATIONS: usize = 512;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RingHistoryIdentity {
+    pub device_id: String,
     pub device_name: String,
     pub location_name: String,
     pub city: Option<String>,

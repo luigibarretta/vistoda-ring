@@ -1,6 +1,7 @@
 History:
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+    - $ref: "#/ExpectedDevice"
     - name: limit
       in: query
       schema: {type: integer, minimum: 1, maximum: 50, default: 20}
@@ -22,3 +23,8 @@ History:
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
       "404": {description: Unknown alias.}
       "502": {description: Ring activity history is unavailable.}
+ExpectedDevice:
+  name: expected_device_id
+  in: query
+  description: Required for legacy aliases without a configured physical binding; mismatches fail closed.
+  schema: {$ref: "./schemas.yaml#/ExpectedDeviceId"}

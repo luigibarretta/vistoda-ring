@@ -1,13 +1,15 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.12.0
+  version: 0.13.0
   description: >-
     Private control-plane, direct WebRTC and bounded native PCMU relay contract
     for Ring Intercom Audio. Vendor credentials never leave the bridge.
 servers:
   - url: http://127.0.0.1:8775
 paths:
+  /v1/intercoms:
+    $ref: "./docs/openapi/inventory-paths.yaml#/Intercoms"
   /healthz:
     get:
       operationId: health

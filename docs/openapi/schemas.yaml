@@ -79,6 +79,8 @@ AudioSessionRequest:
   additionalProperties: false
   required: [offer_sdp, mode]
   properties:
+    expected_device_id: {$ref: "#/ExpectedDeviceId"}
+    ice_gathering_ms: {type: integer, minimum: 0, maximum: 60000}
     offer_sdp:
       type: string
       minLength: 1
@@ -170,8 +172,10 @@ PushEvent:
 PushEventBatch:
   type: object
   additionalProperties: false
-  required: [events, next_sequence, generation, connected]
+  required: [device_id, cursor_reset, events, next_sequence, generation, connected]
   properties:
+    device_id: {$ref: "#/ExpectedDeviceId"}
+    cursor_reset: {type: boolean}
     events:
       type: array
       maxItems: 128
@@ -180,6 +184,13 @@ PushEventBatch:
     next_sequence: {type: integer, format: int64, minimum: 0}
     generation: {type: string, format: uuid}
     connected: {type: boolean}
+ExpectedDeviceId:
+  type: string
+  pattern: "^[1-9][0-9]{0,19}$"
+  description: >-
+    Lossless positive u64 Ring ID. Required on unbound legacy aliases; optional on
+    immutable configured or auto-discovered bindings. Supplied mismatches are rejected
+    before commands or stream ticket grants; never a check-then-rediscover fallback.
 HistoryIdentity:
   type: object
   additionalProperties: false

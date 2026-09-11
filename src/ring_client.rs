@@ -1,3 +1,4 @@
+pub use crate::ring_control::AudioCallGrant;
 pub use crate::ring_wire::RingIntercomIdentity;
 use crate::{
     error::BridgeError,
@@ -11,20 +12,18 @@ use crate::{
 };
 use reqwest::{Client, StatusCode, redirect::Policy};
 use serde_json::Value;
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 use zeroize::Zeroizing;
-pub struct AudioCallGrant {
-    pub device_id: u64,
-    pub ticket: Zeroizing<String>,
-}
 const AUTH_BODY_LIMIT: usize = 64 * 1024;
 const SESSION_BODY_LIMIT: usize = 64 * 1024;
 const DISCOVERY_BODY_LIMIT: usize = 2 * 1024 * 1024;
 const EXPIRY_MARGIN: Duration = Duration::from_mins(1);
 const SESSION_LIFETIME: Duration = Duration::from_hours(12);
+#[derive(Clone)]
 struct Endpoints {
+    stream_ticket: String,
     oauth: String,
     session: String,
     discovery: String,
@@ -34,6 +33,7 @@ struct Endpoints {
 impl Endpoints {
     fn production() -> Self {
         Self {
+            stream_ticket: STREAM_TICKET_ENDPOINT.into(),
             oauth: OAUTH_ENDPOINT.into(),
             session: SESSION_ENDPOINT.into(),
             discovery: DISCOVERY_ENDPOINT.into(),
@@ -52,11 +52,14 @@ struct ClientState {
     registered_until: Option<Instant>,
     rotation_pending: bool,
 }
+#[derive(Clone)]
 pub struct RingClient {
     http: Client,
     endpoints: Endpoints,
     store: RingSessionStore,
-    state: Mutex<ClientState>,
+    state: Arc<Mutex<ClientState>>,
+    selected_device_id: Option<u64>,
+    lifecycle_guard: Option<Arc<tokio::sync::OwnedRwLockReadGuard<()>>>,
 }
 impl RingClient {
     pub fn new(session_path: PathBuf) -> Result<Self, BridgeError> {
@@ -80,12 +83,14 @@ impl RingClient {
             http,
             endpoints,
             store,
-            state: Mutex::new(ClientState {
+            state: Arc::new(Mutex::new(ClientState {
                 session,
                 access: None,
                 registered_until: None,
                 rotation_pending: false,
-            }),
+            })),
+            selected_device_id: None,
+            lifecycle_guard: None,
         })
     }
     pub async fn discover_intercoms(&self) -> Result<Vec<RingIntercomIdentity>, BridgeError> {
@@ -106,36 +111,11 @@ impl RingClient {
             }
             let body = checked_body(response, "device discovery", DISCOVERY_BODY_LIMIT).await?;
             drop(state);
-            return parse_devices(&body);
+            return Ok(self.filter_devices(parse_devices(&body)?));
         }
         Err(BridgeError::Protocol(
             "discovery retry was exhausted".into(),
         ))
-    }
-    pub async fn prepare_audio_call(&self) -> Result<AudioCallGrant, BridgeError> {
-        let devices = self.discover_intercoms().await?;
-        let device_id = match devices.as_slice() {
-            [device] => device.id(),
-            _ => return Err(BridgeError::Protocol("expected one Ring Intercom".into())),
-        };
-        let mut state = self.state.lock().await;
-        self.ensure_authenticated(&mut state).await?;
-        self.ensure_registered(&mut state).await?;
-        let response = self
-            .http
-            .post(STREAM_TICKET_ENDPOINT)
-            .bearer_auth(access_value(&state)?)
-            .header("hardware_id", state.session.hardware_id().to_string())
-            .header(reqwest::header::USER_AGENT, USER_AGENT)
-            .send()
-            .await
-            .map_err(|error| BridgeError::Transport("stream ticket", error))?;
-        drop(state);
-        let body = checked_body(response, "stream ticket", AUTH_BODY_LIMIT).await?;
-        Ok(AudioCallGrant {
-            device_id,
-            ticket: crate::ring_wire::parse_ticket(&body)?,
-        })
     }
     async fn ensure_authenticated(&self, state: &mut ClientState) -> Result<(), BridgeError> {
         if state.rotation_pending {
@@ -239,6 +219,8 @@ fn invalidate_auth(state: &mut ClientState) {
 const fn is_unauthorized(error: &BridgeError) -> bool {
     matches!(error, BridgeError::VendorRejected { status: 401, .. })
 }
+#[path = "ring_audio_grant.rs"]
+mod audio_grant;
 #[path = "ring_control_provider.rs"]
 mod controls;
 #[path = "ring_history_provider.rs"]
@@ -247,4 +229,4 @@ mod history;
 mod push;
 #[cfg(test)]
 #[path = "ring_client_tests.rs"]
-mod tests;
+pub(crate) mod tests;

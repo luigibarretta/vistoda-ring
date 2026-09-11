@@ -14,11 +14,34 @@ use crate::{
 const CONTROL_BODY_LIMIT: usize = 64 * 1024;
 
 impl RingClient {
+    pub(crate) fn with_lifecycle_guard(
+        mut self,
+        guard: tokio::sync::OwnedRwLockReadGuard<()>,
+    ) -> Self {
+        self.lifecycle_guard = Some(std::sync::Arc::new(guard));
+        self
+    }
+    pub(crate) fn filter_devices(
+        &self,
+        devices: Vec<RingIntercomIdentity>,
+    ) -> Vec<RingIntercomIdentity> {
+        devices
+            .into_iter()
+            .filter(|device| self.selected_device_id.is_none_or(|id| device.id() == id))
+            .collect()
+    }
+    pub(crate) fn scoped(&self, device_id: Option<u64>) -> Self {
+        let mut client = self.clone();
+        client.selected_device_id = device_id;
+        client
+    }
+
     pub async fn device_status(&self) -> Result<RingDeviceStatus, BridgeError> {
         let device = only_device(self.discover_intercoms().await?)?;
         let (doorbell_volume, mic_volume, voice_volume) = device.volumes();
         let last_activity = self.latest_activity(&device).await.ok().flatten();
         Ok(RingDeviceStatus {
+            device_id: device.id().to_string(),
             battery: device.battery(),
             online: device.online(),
             doorbell_volume,
@@ -29,7 +52,14 @@ impl RingClient {
     }
 
     pub async fn unlock(&self) -> Result<(), BridgeError> {
-        let device = only_device(self.discover_intercoms().await?)?;
+        self.unlock_expected(None).await
+    }
+
+    pub async fn unlock_expected(
+        &self,
+        expected_device_id: Option<&str>,
+    ) -> Result<(), BridgeError> {
+        let device = self.verified_device(expected_device_id).await?;
         let endpoint = format!(
             "{}/commands/v1/devices/{}/device_rpc",
             self.endpoints.api_root,
@@ -63,7 +93,9 @@ impl RingClient {
 
     pub async fn update_volume(&self, update: &VolumeUpdate) -> Result<(), BridgeError> {
         update.validate()?;
-        let device = only_device(self.discover_intercoms().await?)?;
+        let device = self
+            .verified_device(update.expected_device_id.as_deref())
+            .await?;
         let (method, endpoint, body, query, setting, value) =
             if let Some(value) = update.doorbell_volume {
                 (

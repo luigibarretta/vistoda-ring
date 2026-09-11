@@ -18,6 +18,7 @@ fn app() -> axum::Router {
     let devices = BTreeMap::from([(
         "entrance".into(),
         DeviceConfig {
+            device_id: Some(42),
             kind: DeviceKind::RingIntercomAudio,
         },
     )]);

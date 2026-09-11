@@ -2,8 +2,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::BridgeError;
 
+pub struct AudioCallGrant {
+    pub device_id: u64,
+    pub ticket: zeroize::Zeroizing<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RingDeviceStatus {
+    pub device_id: String,
     pub battery: Option<u8>,
     pub online: bool,
     pub doorbell_volume: Option<u8>,
@@ -15,6 +21,8 @@ pub struct RingDeviceStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct VolumeUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_device_id: Option<String>,
     pub doorbell_volume: Option<u8>,
     pub mic_volume: Option<u8>,
     pub voice_volume: Option<u8>,
@@ -61,6 +69,7 @@ mod tests {
     fn volume_contract_is_non_empty_and_bounded() {
         assert!(
             VolumeUpdate {
+                expected_device_id: None,
                 doorbell_volume: None,
                 mic_volume: None,
                 voice_volume: None,
@@ -70,6 +79,7 @@ mod tests {
         );
         assert!(
             VolumeUpdate {
+                expected_device_id: None,
                 doorbell_volume: Some(9),
                 mic_volume: None,
                 voice_volume: None,

@@ -33,6 +33,7 @@ fn request_does_not_accept_unknown_fields() {
 #[test]
 fn browser_ice_duration_is_bounded() {
     let request = AudioSessionRequest {
+        expected_device_id: None,
         offer_sdp: OFFER.into(),
         mode: AudioMode::Listen,
         ice_gathering_ms: Some(60_001),

@@ -1,9 +1,14 @@
 Events:
   parameters:
     - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+    - $ref: "./history-paths.yaml#/ExpectedDevice"
+    - name: generation
+      in: query
+      description: Previous response generation; a change resets the cursor to zero and returns retained new-generation events.
+      schema: {type: string, format: uuid}
     - name: after
       in: query
-      description: Omit to initialize at the live tail without replaying queued events.
+      description: Omit to initialize at the live tail. A value beyond the current tail also resets the cursor to zero.
       schema: {type: integer, format: int64, minimum: 0}
     - name: wait
       in: query

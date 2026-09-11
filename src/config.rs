@@ -120,13 +120,19 @@ impl BridgeConfig {
 }
 
 fn validate_devices(devices: &BTreeMap<String, DeviceConfig>) -> Result<(), BridgeError> {
-    if devices.is_empty() {
+    if devices.is_empty() || devices.len() > crate::ring_inventory::MAX_INTERCOMS {
         return Err(BridgeError::Configuration(
-            "at least one intercom alias is required".into(),
+            "between 1 and 32 intercom aliases are required".into(),
         ));
     }
     for (alias, device) in devices {
+        if device.device_id == Some(0) || (devices.len() > 1 && device.device_id.is_none()) {
+            return Err(BridgeError::Configuration(
+                "multiple aliases require explicit positive device_id bindings".into(),
+            ));
+        }
         if alias.is_empty()
+            || alias.len() > 64
             || !alias
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
@@ -140,6 +146,20 @@ fn validate_devices(devices: &BTreeMap<String, DeviceConfig>) -> Result<(), Brid
                 "only Ring Intercom Audio is admitted during protocol research".into(),
             ));
         }
+    }
+    let ids: std::collections::BTreeSet<_> = devices
+        .values()
+        .filter_map(|device| device.device_id)
+        .collect();
+    if ids.len()
+        != devices
+            .values()
+            .filter(|device| device.device_id.is_some())
+            .count()
+    {
+        return Err(BridgeError::Configuration(
+            "Ring device_id bindings must be unique".into(),
+        ));
     }
     Ok(())
 }

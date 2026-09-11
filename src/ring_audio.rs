@@ -15,6 +15,8 @@ pub enum AudioMode {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AudioSessionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_device_id: Option<String>,
     pub offer_sdp: String,
     pub mode: AudioMode,
     #[serde(default)]

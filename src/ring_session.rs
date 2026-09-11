@@ -87,6 +87,7 @@ impl RingSession {
     }
 }
 
+#[derive(Clone)]
 pub struct RingSessionStore {
     path: PathBuf,
 }

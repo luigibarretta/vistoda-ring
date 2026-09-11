@@ -42,7 +42,20 @@ pub async fn run_api_canary(
     base_url: &str,
     token_file: &Path,
     duration: Duration,
+    alias: &str,
+    expected_device_id: Option<&str>,
 ) -> Result<ApiCanaryEvidence, BridgeError> {
+    if alias.is_empty()
+        || alias.len() > 64
+        || !alias
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(protocol("API canary alias is invalid"));
+    }
+    if let Some(expected) = expected_device_id {
+        crate::ring_expected_device::parse_id(expected)?;
+    }
     if !(Duration::from_secs(5)..=Duration::from_secs(30)).contains(&duration) {
         return Err(protocol("API canary duration must be 5-30 seconds"));
     }
@@ -57,12 +70,13 @@ pub async fn run_api_canary(
     let peer = Box::pin(MediaPeer::new()).await?;
     let offer = peer.offer().await?;
     let endpoint = base
-        .join("v1/devices/entrance/audio/sessions")
+        .join(&format!("v1/devices/{alias}/audio/sessions"))
         .map_err(|_| protocol("API canary session URL is invalid"))?;
     let response = client
         .post(endpoint.clone())
         .bearer_auth(token.as_str())
         .json(&AudioSessionRequest {
+            expected_device_id: expected_device_id.map(str::to_owned),
             offer_sdp: offer,
             mode: AudioMode::Listen,
             ice_gathering_ms: None,
@@ -73,7 +87,14 @@ pub async fn run_api_canary(
     let body = checked_body(response, "API canary start", BODY_LIMIT).await?;
     let session: AudioSessionCreated = serde_json::from_slice(&body)?;
     let result = apply_session(&peer, &session, duration).await;
-    let delete_status = delete_session(&client, &endpoint, &token, &session.session_id).await;
+    let delete_status = delete_session(
+        &client,
+        &endpoint,
+        &token,
+        &session.session_id,
+        expected_device_id,
+    )
+    .await;
     let peer_closed = peer.close().await.is_ok();
     result?;
     let media = peer.snapshot().await;
@@ -109,10 +130,16 @@ async fn delete_session(
     endpoint: &Url,
     token: &str,
     session_id: &str,
+    expected_device_id: Option<&str>,
 ) -> Result<u16, BridgeError> {
-    let target = endpoint
+    let mut target = endpoint
         .join(&format!("sessions/{session_id}"))
         .map_err(|_| protocol("API canary delete URL is invalid"))?;
+    if let Some(expected) = expected_device_id {
+        target
+            .query_pairs_mut()
+            .append_pair("expected_device_id", expected);
+    }
     let response = client
         .delete(target)
         .bearer_auth(token)
