@@ -1,4 +1,4 @@
-FROM rust:1.96-bookworm@sha256:a339861ae23e9abb272cea45dfafde21760d2ce6577a70f8a926153677902663 AS builder
+FROM rust:1.98-bookworm@sha256:9a73a5088750b4c95158ab26629c854c3d6fc4b173cb7bc8079ad252d8ed7bfa AS builder
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
