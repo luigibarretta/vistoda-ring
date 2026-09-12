@@ -8,3 +8,7 @@ Includes the Apache-2.0 Vistoda Provider Kit bootstrap, Copyright 2026 Luigi
 Barretta, and the vendored fcm-push-listener-ring dependency under its original
 license in vendor/fcm-push-listener-ring/LICENSE. Image distributions preserve
 project notices and dependency license files under /usr/share/doc/vistoda.
+
+Includes ece 2.3.1 under MPL-2.0. Its corresponding build-time source is bundled
+with container distributions. See SOURCE_AVAILABILITY.md for the exact location
+and extraction instructions.
