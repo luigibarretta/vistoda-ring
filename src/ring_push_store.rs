@@ -86,6 +86,19 @@ impl RingPushStore {
         }
         result
     }
+
+    pub fn clear(&self) -> Result<(), BridgeError> {
+        match fs::remove_file(&self.path) {
+            Ok(()) => {
+                if let Some(parent) = self.path.parent() {
+                    File::open(parent)?.sync_all()?;
+                }
+                Ok(())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
 }
 
 fn write_and_replace(
@@ -179,52 +192,5 @@ fn configuration(message: &str) -> BridgeError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{RingPushState, RingPushStore};
-    use fcm_push_listener::{Registration, Session, WebPushKeys};
-    #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
-
-    fn state() -> RingPushState {
-        RingPushState {
-            registration: Registration {
-                fcm_token: "x".repeat(64),
-                gcm: Session {
-                    android_id: 123,
-                    security_token: 456,
-                },
-                keys: WebPushKeys {
-                    public_key: vec![1; 65],
-                    private_key: vec![2; 32],
-                    auth_secret: vec![3; 16],
-                },
-            },
-            persistent_ids: vec!["one".into()],
-        }
-    }
-
-    #[test]
-    fn state_round_trip_is_private_and_bounded() {
-        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
-        let path = directory.path().join("push.json");
-        let store = RingPushStore::new(path.clone());
-        store
-            .persist(&state())
-            .unwrap_or_else(|error| panic!("persist: {error}"));
-        let loaded = store
-            .load()
-            .unwrap_or_else(|error| panic!("load: {error}"))
-            .unwrap_or_else(|| panic!("state missing"));
-        assert_eq!(loaded.registration.fcm_token.len(), 64);
-        assert_eq!(loaded.persistent_ids, ["one"]);
-        #[cfg(unix)]
-        assert_eq!(
-            std::fs::metadata(path)
-                .unwrap_or_else(|error| panic!("metadata: {error}"))
-                .permissions()
-                .mode()
-                & 0o777,
-            0o600
-        );
-    }
-}
+#[path = "ring_push_store_tests.rs"]
+mod tests;

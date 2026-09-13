@@ -46,6 +46,7 @@ mod ring_push_metrics;
 pub mod ring_push_payload;
 mod ring_push_queues;
 mod ring_push_store;
+mod ring_push_support;
 mod ring_push_worker;
 pub mod ring_recording;
 mod ring_recording_api;

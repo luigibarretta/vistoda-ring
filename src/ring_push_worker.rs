@@ -20,6 +20,7 @@ use crate::{
     ring_push_metrics::RingPushMetrics,
     ring_push_payload::parse_push_event,
     ring_push_store::{RingPushState, RingPushStore},
+    ring_push_support::{fcm_client, unix_timestamp},
 };
 
 const FIREBASE_APP_ID: &str = "1:876313859327:android:e10ec6ddb3c81f39";
@@ -29,7 +30,7 @@ const MIN_RETRY: Duration = Duration::from_secs(5);
 const MAX_RETRY: Duration = Duration::from_mins(5);
 
 #[derive(Debug, Error)]
-enum PushError {
+pub enum PushError {
     #[error("Ring push provider operation failed")]
     Provider(#[from] BridgeError),
     #[error("Ring FCM {0} failed")]
@@ -94,7 +95,22 @@ impl RingPushService {
         let mut delay = MIN_RETRY;
         loop {
             match self.run_once(&provider).await {
-                Ok(()) => tracing::warn!("Ring push connection ended"),
+                Ok(true) => {
+                    tracing::warn!("Ring push connection ended; rotating registration");
+                    let store = Arc::clone(&self.store);
+                    match tokio::task::spawn_blocking(move || store.clear()).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => {
+                            tracing::warn!(error_class = %error, "Ring push registration rotation failed");
+                        }
+                        Err(error) => {
+                            tracing::warn!(error_class = %error, "Ring push registration rotation task failed");
+                        }
+                    }
+                }
+                Ok(false) => {
+                    tracing::info!("Ring push device subscription changed; reconnecting");
+                }
                 Err(error) => tracing::warn!(error_class = %error, "Ring push listener failed"),
             }
             let was_connected = self.metrics.connected();
@@ -111,7 +127,7 @@ impl RingPushService {
         }
     }
 
-    async fn run_once(&self, provider: &RingProvider) -> Result<(), PushError> {
+    async fn run_once(&self, provider: &RingProvider) -> Result<bool, PushError> {
         let http = fcm_client()?;
         let mut state = if let Some(state) = self.load().await? {
             state
@@ -162,7 +178,7 @@ impl RingPushService {
         loop {
             let message = tokio::select! {
                 message = stream.next() => message,
-                _ = reload.changed() => return Ok(()),
+                _ = reload.changed() => return Ok(false),
             };
             let Some(message) = message else {
                 break;
@@ -182,7 +198,7 @@ impl RingPushService {
                 Message::Other(_, _) => self.metrics.ignored(),
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     async fn handle_message(&self, device_ids: &[String], body: &[u8]) {
@@ -229,18 +245,6 @@ impl RingPushService {
     }
 }
 
-fn fcm_client() -> Result<reqwest::Client, PushError> {
-    reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|_| PushError::Fcm("HTTP client setup"))
-}
-
 #[cfg(test)]
 #[path = "ring_push_multidevice_tests.rs"]
 mod multi_tests;
-
-fn unix_timestamp() -> i64 {
-    time::OffsetDateTime::now_utc().unix_timestamp()
-}
