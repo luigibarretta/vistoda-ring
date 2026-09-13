@@ -8,6 +8,12 @@ info:
 servers:
   - url: http://127.0.0.1:8775
 paths:
+  /v1/cameras:
+    $ref: "./docs/openapi/camera-paths.yaml#/Cameras"
+  /v1/cameras/{device}/video/sessions:
+    $ref: "./docs/openapi/camera-paths.yaml#/Sessions"
+  /v1/cameras/{device}/video/sessions/{session}:
+    $ref: "./docs/openapi/camera-paths.yaml#/Session"
   /v1/intercoms:
     $ref: "./docs/openapi/inventory-paths.yaml#/Intercoms"
   /healthz:

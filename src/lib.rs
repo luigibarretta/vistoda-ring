@@ -11,6 +11,8 @@ pub mod ring_audio;
 mod ring_audio_alias_tests;
 mod ring_audio_manager;
 mod ring_audio_worker;
+mod ring_camera;
+mod ring_camera_api;
 pub mod ring_client;
 pub mod ring_control;
 mod ring_control_api;
@@ -60,6 +62,9 @@ mod ring_session_gate;
 mod ring_session_reason;
 mod ring_signal_wire;
 mod ring_signaling;
+mod ring_video;
+#[cfg(test)]
+mod ring_video_session_tests;
 mod ring_wire;
 
 pub use api::{Runtime, router};

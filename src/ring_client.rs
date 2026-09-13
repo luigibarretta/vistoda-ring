@@ -94,6 +94,10 @@ impl RingClient {
         })
     }
     pub async fn discover_intercoms(&self) -> Result<Vec<RingIntercomIdentity>, BridgeError> {
+        Ok(self.filter_devices(parse_devices(&self.discovery_body().await?)?))
+    }
+
+    async fn discovery_body(&self) -> Result<Zeroizing<Vec<u8>>, BridgeError> {
         let mut state = self.state.lock().await;
         for attempt in 0..=1 {
             self.ensure_authenticated(&mut state).await?;
@@ -111,7 +115,7 @@ impl RingClient {
             }
             let body = checked_body(response, "device discovery", DISCOVERY_BODY_LIMIT).await?;
             drop(state);
-            return Ok(self.filter_devices(parse_devices(&body)?));
+            return Ok(body);
         }
         Err(BridgeError::Protocol(
             "discovery retry was exhausted".into(),
@@ -221,6 +225,8 @@ const fn is_unauthorized(error: &BridgeError) -> bool {
 }
 #[path = "ring_audio_grant.rs"]
 mod audio_grant;
+#[path = "ring_camera_provider.rs"]
+mod cameras;
 #[path = "ring_control_provider.rs"]
 mod controls;
 #[path = "ring_history_provider.rs"]

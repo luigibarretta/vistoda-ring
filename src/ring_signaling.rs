@@ -23,6 +23,7 @@ pub struct Signaling {
     dialog_id: Uuid,
     device_id: u64,
     session_id: Option<Zeroizing<String>>,
+    video: bool,
 }
 
 pub use crate::ring_signal_wire::Incoming;
@@ -57,6 +58,7 @@ impl Signaling {
             dialog_id: Uuid::new_v4(),
             device_id,
             session_id: None,
+            video: false,
         })
     }
 
@@ -66,7 +68,7 @@ impl Signaling {
             "dialog_id": self.dialog_id,
             "body": {
                 "doorbot_id": self.device_id,
-                "stream_options": {"audio_enabled": true, "video_enabled": false},
+                "stream_options": {"audio_enabled": true, "video_enabled": self.video},
                 "sdp": sdp,
                 "type": "offer"
             }
@@ -98,7 +100,7 @@ impl Signaling {
             "stream_options",
             json!({
                 "audio_enabled": true,
-                "video_enabled": false
+                "video_enabled": self.video
             }),
         )
         .await
@@ -107,6 +109,24 @@ impl Signaling {
     pub async fn camera_options(&mut self) -> Result<(), BridgeError> {
         self.session_message("camera_options", json!({"stealth_mode": false}))
             .await
+    }
+
+    pub const fn set_video(&mut self, video: bool) {
+        self.video = video;
+    }
+
+    #[cfg(test)]
+    pub async fn test_socket(url: &str, device_id: u64) -> Self {
+        let (socket, _) = connect_async(url)
+            .await
+            .unwrap_or_else(|error| panic!("{error}"));
+        Self {
+            socket,
+            dialog_id: Uuid::new_v4(),
+            device_id,
+            session_id: None,
+            video: false,
+        }
     }
 
     pub async fn ping(&mut self) -> Result<(), BridgeError> {

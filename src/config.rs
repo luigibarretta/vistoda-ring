@@ -120,9 +120,9 @@ impl BridgeConfig {
 }
 
 fn validate_devices(devices: &BTreeMap<String, DeviceConfig>) -> Result<(), BridgeError> {
-    if devices.is_empty() || devices.len() > crate::ring_inventory::MAX_INTERCOMS {
+    if devices.len() > crate::ring_inventory::MAX_INTERCOMS {
         return Err(BridgeError::Configuration(
-            "between 1 and 32 intercom aliases are required".into(),
+            "at most 32 intercom aliases are supported".into(),
         ));
     }
     for (alias, device) in devices {

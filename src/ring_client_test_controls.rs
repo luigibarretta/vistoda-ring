@@ -64,7 +64,9 @@ pub async fn discover(State(state): State<Arc<MockState>>, headers: HeaderMap) -
     if !valid_bearer(&headers) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    Json(json!({"other": [
+    Json(json!({"doorbots": if state.include_cameras { vec![json!({"id": 51, "kind": "doorbell_v4", "description": "Front camera", "location_id": "loc-1"})] } else { vec![] },
+    "stickup_cams": if state.include_cameras { vec![json!({"id": 52, "kind": "stickup_cam", "description": "Garden camera"})] } else { vec![] },
+    "other": [
         {"id": 42, "kind": "intercom_handset_audio", "description": "Synthetic Entrance Intercom",
          "location_id": "loc-1", "battery_life": "73", "alerts": {"connection": "online"},
          "settings": {"doorbell_volume": 6, "mic_volume": 10, "voice_volume": 9}},

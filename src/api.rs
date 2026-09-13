@@ -35,6 +35,9 @@ pub struct Runtime {
     pub(crate) push: Arc<RingPushService>,
     pub(crate) discovery_started: std::sync::atomic::AtomicBool,
     pub(crate) discovery_wakeup: tokio::sync::Notify,
+    pub(crate) camera_sessions: tokio::sync::Mutex<
+        std::collections::BTreeMap<u64, crate::ring_audio_manager::RingAudioSessions>,
+    >,
 }
 
 impl Runtime {
@@ -59,6 +62,7 @@ impl Runtime {
             push,
             discovery_started: std::sync::atomic::AtomicBool::new(false),
             discovery_wakeup: tokio::sync::Notify::new(),
+            camera_sessions: tokio::sync::Mutex::new(std::collections::BTreeMap::new()),
         })
     }
 
@@ -115,6 +119,7 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
         .merge(crate::ring_control_api::routes())
         .merge(crate::ring_history_api::routes())
         .merge(crate::ring_inventory_api::routes())
+        .merge(crate::ring_camera_api::routes())
         .merge(crate::ring_push_api::routes())
         .merge(crate::ring_relay_api::routes())
         .merge(crate::ring_recording_api::routes())

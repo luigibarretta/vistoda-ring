@@ -33,6 +33,8 @@ const ACCESS_A: &str = "synthetic_access_token_a_1234567890abcdef";
 const ACCESS_B: &str = "synthetic_access_token_b_1234567890abcdef";
 
 #[derive(Default)]
+// Independent fixture and fault switches, not states in a production state machine.
+#[allow(clippy::struct_excessive_bools)]
 pub struct MockState {
     pub oauth_calls: AtomicUsize,
     pub session_calls: AtomicUsize,
@@ -44,6 +46,7 @@ pub struct MockState {
     pub rate_limit_discovery: bool,
     pub control_calls: AtomicUsize,
     pub additional_intercoms: usize,
+    pub include_cameras: bool,
     pub last_control_device: AtomicUsize,
     pub location_status: u16,
 }

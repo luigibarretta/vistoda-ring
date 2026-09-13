@@ -57,7 +57,7 @@ pub fn inventory(
     })
 }
 
-fn location_names(body: &[u8]) -> Option<BTreeMap<String, String>> {
+pub fn location_names(body: &[u8]) -> Option<BTreeMap<String, String>> {
     let locations: Locations = serde_json::from_slice(body).ok()?;
     if locations.user_locations.len() > MAX_LOCATIONS {
         return None;

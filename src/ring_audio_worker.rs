@@ -20,16 +20,38 @@ const MAX_ICE_CANDIDATES: usize = 64;
 
 pub struct ProductionSessionRunner {
     provider: Arc<RingProvider>,
+    video: bool,
 }
 
 impl ProductionSessionRunner {
     pub const fn new(provider: Arc<RingProvider>) -> Self {
-        Self { provider }
+        Self {
+            provider,
+            video: false,
+        }
+    }
+
+    pub const fn camera(provider: Arc<RingProvider>) -> Self {
+        Self {
+            provider,
+            video: true,
+        }
     }
 }
 
 #[async_trait]
 impl SessionRunner for ProductionSessionRunner {
+    fn validate(
+        &self,
+        request: &crate::ring_audio::AudioSessionRequest,
+    ) -> Result<(), BridgeError> {
+        if self.video {
+            crate::ring_video::validate_request(request)
+        } else {
+            crate::ring_audio::validate_request(request)
+        }
+    }
+
     async fn run(
         &self,
         offer_sdp: String,
@@ -37,10 +59,11 @@ impl SessionRunner for ProductionSessionRunner {
         ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
         mut cancel: oneshot::Receiver<()>,
     ) -> SessionEndReason {
-        let (mut signaling, negotiated) = match self
-            .negotiate(&offer_sdp, expected_device_id.as_deref())
-            .await
-        {
+        let negotiation = tokio::select! {
+            _ = &mut cancel => return SessionEndReason::UserStop,
+            result = self.negotiate(&offer_sdp, expected_device_id.as_deref()) => result,
+        };
+        let (mut signaling, negotiated) = match negotiation {
             Ok(value) => value,
             Err(error) => {
                 let _ = ready.send(Err(error));
@@ -89,14 +112,20 @@ impl ProductionSessionRunner {
         offer: &str,
         expected: Option<&str>,
     ) -> Result<(Signaling, NegotiatedAudio), BridgeError> {
-        let grant = self
-            .provider
-            .client()
-            .await?
-            .prepare_audio_call_expected(expected)
-            .await?;
+        let client = self.provider.client().await?;
+        let grant = if self.video {
+            client
+                .prepare_camera_call(expected.ok_or_else(crate::ring_expected_device::mismatch)?)
+                .await?
+        } else {
+            client.prepare_audio_call_expected(expected).await?
+        };
         let mut signaling = Signaling::connect(&grant.ticket, grant.device_id).await?;
-        signaling.offer(offer).await?;
+        signaling.set_video(self.video);
+        if let Err(error) = signaling.offer(offer).await {
+            let _ = signaling.close().await;
+            return Err(error);
+        }
         let negotiated = match self.collect(&mut signaling).await {
             Ok(value) => value,
             Err(error) => {
@@ -130,7 +159,11 @@ impl ProductionSessionRunner {
                 .ok_or_else(|| protocol("Ring closed signaling during negotiation"))?;
             match message {
                 Incoming::Answer(sdp) => {
-                    validate_answer(&sdp)?;
+                    if self.video {
+                        crate::ring_video::validate_answer(&sdp)?;
+                    } else {
+                        validate_answer(&sdp)?;
+                    }
                     answer = Some(sdp);
                 }
                 Incoming::Ice { candidate, line } => push_ice(&mut candidates, candidate, line)?,
@@ -160,7 +193,10 @@ impl ProductionSessionRunner {
                 Ok(Ok(Some(Incoming::Ice { candidate, line }))) => {
                     push_ice(candidates, candidate, line)?;
                 }
-                Ok(Ok(Some(Incoming::Close { .. } | Incoming::Other) | None)) | Err(_) => break,
+                Ok(Ok(Some(Incoming::Close { .. }) | None)) => {
+                    return Err(protocol("Ring closed signaling during ICE collection"));
+                }
+                Err(_) => break,
                 Ok(Ok(Some(_))) => {}
                 Ok(Err(error)) => return Err(error),
             }
@@ -187,3 +223,7 @@ fn push_ice(
 fn protocol(message: &str) -> BridgeError {
     BridgeError::Protocol(message.into())
 }
+
+#[cfg(test)]
+#[path = "ring_video_signaling_tests.rs"]
+mod video_tests;

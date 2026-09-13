@@ -13,6 +13,10 @@ impl RingClient {
         expected: Option<&str>,
     ) -> Result<AudioCallGrant, BridgeError> {
         let device_id = self.verified_device(expected).await?.id();
+        self.stream_grant(device_id).await
+    }
+
+    pub(super) async fn stream_grant(&self, device_id: u64) -> Result<AudioCallGrant, BridgeError> {
         let mut state = self.state.lock().await;
         self.ensure_authenticated(&mut state).await?;
         self.ensure_registered(&mut state).await?;

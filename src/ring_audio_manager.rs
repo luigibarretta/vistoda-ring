@@ -7,7 +7,6 @@ use std::{
     time::Duration,
 };
 
-use async_trait::async_trait;
 use tokio::{
     sync::{Mutex, oneshot, watch},
     time::Instant,
@@ -18,7 +17,7 @@ use crate::{
     BridgeError,
     ring_audio::{
         AudioMode, AudioSessionCreated, AudioSessionRequest, NegotiatedAudio, SESSION_SECONDS,
-        SessionEndReason, validate_request,
+        SessionEndReason,
     },
     ring_audio_worker::ProductionSessionRunner,
     ring_metrics::RingMetrics,
@@ -55,16 +54,9 @@ pub struct RelayReservation {
     permit: SessionPermit,
     started_at: Instant,
 }
-#[async_trait]
-pub trait SessionRunner: Send + Sync {
-    async fn run(
-        &self,
-        offer_sdp: String,
-        expected_device_id: Option<String>,
-        ready: oneshot::Sender<Result<NegotiatedAudio, BridgeError>>,
-        cancel: oneshot::Receiver<()>,
-    ) -> SessionEndReason;
-}
+#[path = "ring_session_runner.rs"]
+mod runner;
+pub use runner::SessionRunner;
 #[derive(Clone)]
 pub struct RingAudioSessions {
     state: Arc<Mutex<SessionState>>,
@@ -83,7 +75,7 @@ impl RingAudioSessions {
         Self::build(runner, Arc::new(RingMetrics::default()))
     }
 
-    fn build(runner: Arc<dyn SessionRunner>, metrics: Arc<RingMetrics>) -> Self {
+    pub(crate) fn build(runner: Arc<dyn SessionRunner>, metrics: Arc<RingMetrics>) -> Self {
         Self {
             state: Arc::new(Mutex::new(SessionState::default())),
             runner,
@@ -97,7 +89,7 @@ impl RingAudioSessions {
         device: String,
         request: AudioSessionRequest,
     ) -> Result<AudioSessionCreated, BridgeError> {
-        validate_request(&request)?;
+        self.runner.validate(&request)?;
         let id = Uuid::new_v4();
         let started_at = Instant::now();
         let (cancel_tx, cancel_rx) = oneshot::channel();

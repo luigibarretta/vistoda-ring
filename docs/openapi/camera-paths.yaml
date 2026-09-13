@@ -1,0 +1,104 @@
+Cameras:
+  get:
+    operationId: listNativeRingCameras
+    summary: Discover enrolled Ring cameras without starting live media
+    security: [{bearerAuth: []}]
+    responses:
+      "200":
+        description: Numeric-ID sorted, minimal native camera inventory; hardware unverified
+        headers:
+          Cache-Control: {schema: {type: string, const: no-store}}
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [cameras]
+              properties:
+                cameras:
+                  type: array
+                  maxItems: 32
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [device_id, name, model, location_name, capabilities]
+                    properties:
+                      device_id: {$ref: "./schemas.yaml#/ExpectedDeviceId"}
+                      name: {type: string, minLength: 1, maxLength: 128}
+                      model: {type: string, minLength: 1, maxLength: 128}
+                      location_name: {type: [string, "null"], maxLength: 128}
+                      capabilities:
+                        type: object
+                        additionalProperties: false
+                        required: [available, phase]
+                        properties:
+                          phase: {type: string, const: protocol_research}
+                          available:
+                            type: array
+                            items:
+                              enum: [live_video_receive, live_audio_receive, live_audio_transmit]
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "502": {description: Ring enrollment or discovery unavailable}
+Sessions:
+  post:
+    operationId: createNativeCameraVideoSession
+    description: >-
+      Direct browser-to-Ring WebRTC with bounded signaling. H264 video must be
+      recvonly and PCMU audio sendrecv. Media is never passed through the PCMU
+      WebSocket relay. The consumer supplies silence in listen mode and owns
+      microphone consent. Exact expected_device_id must match the physical path
+      ID. A camera ID cannot address any Intercom control. No live device
+      acceptance has been performed; capabilities remain protocol_research.
+    security: [{bearerAuth: []}]
+    parameters: [{$ref: "#/CameraId"}]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "./schemas.yaml#/AudioSessionRequest"
+              - required: [expected_device_id]
+    responses:
+      "201":
+        description: Browser SDP answer and video/audio ICE candidates, 120-second maximum lifetime
+        headers:
+          Cache-Control: {schema: {type: string, const: no-store}}
+        content:
+          application/json:
+            schema: {$ref: "./schemas.yaml#/AudioSession"}
+      "400": {description: Invalid SDP or missing/mismatched physical camera ID}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: ID is not an enrolled native camera}
+      "409": {description: Camera already has an active session}
+      "429": {description: Ten-second per-camera cooldown}
+      "502": {description: Ring unavailable}
+Session:
+  delete:
+    operationId: deleteNativeCameraVideoSession
+    description: Idempotent stop scoped to the exact physical camera; requires no provider discovery
+    security: [{bearerAuth: []}]
+    parameters:
+      - $ref: "#/CameraId"
+      - name: session
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: expected_device_id
+        in: query
+        required: true
+        schema: {$ref: "./schemas.yaml#/ExpectedDeviceId"}
+      - name: reason
+        in: query
+        schema:
+          type: string
+          enum: [user_stop, panel_closed, client_expired, connection_ended, start_failed]
+    responses:
+      "204": {description: Session stopped or already absent on this camera}
+      "400": {description: Invalid ID, session or client stop reason}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+CameraId:
+  name: device
+  in: path
+  required: true
+  schema: {$ref: "./schemas.yaml#/ExpectedDeviceId"}
