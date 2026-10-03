@@ -12,15 +12,16 @@
 
 Ring cloud is the vendor-facing boundary. The Rust provider is the only
 component allowed to cross it. Home Assistant and SceneTrove are authenticated
-LAN consumers. Home Assistant owns user confirmation and the incoming-ding
-automation; Vistoda may execute a bounded native unlock.
+LAN consumers. Home Assistant owns authorization and the incoming-ding
+automation. The Vistoda panel adds interactive confirmation; authorized Home
+Assistant buttons and automations may execute the same native unlock directly.
 
 ## Threats and controls
 
 | Threat | Control |
 | --- | --- |
 | Unauthorized listening | Constant-time bearer auth, private bind/firewall and no public route |
-| Accidental door action | One-shot endpoint, explicit confirmation, no retries after an ambiguous mutation |
+| Accidental door action | Exact device binding, panel confirmation, HA authorization and no retry after an ambiguous mutation |
 | Credential disclosure | Ephemeral zeroizing enrollment state, session file only, no payload logs and synthetic fixtures |
 | Account lockout | One active flow, start cooldown, single-use MFA and no retry of rejected requests or 429 |
 | Vendor throttling | One call per alias, ten-second post-call cooldown, explicit user start and no rejected-request retry |

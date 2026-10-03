@@ -1,7 +1,6 @@
 # Vistoda Ring
 
-Production Rust connector for bounded Ring Intercom Audio delivery to Home
-Assistant and SceneTrove.
+Private Rust provider for Ring Intercom controls, events and audio in Vistoda.
 
 The Rust package and executable remain `ring-intercom-bridge` as a compatibility
 contract for existing images, health checks and automation. The product and
@@ -9,29 +8,23 @@ canonical repository are Vistoda Ring and `vistoda-ring`.
 
 ## Current status
 
-The provider exposes bounded direct WebRTC and native PCMU relay APIs after the
-owned audio-only Intercom completed repeated bidirectional PCMU canaries. It
-adds native battery/status, volume and one-shot unlock contracts without a
-public listener. It also archives audio captured by an active Vistoda browser
-session; it does not depend on a Ring cloud recording feature.
-An authenticated, rate-limited enrollment API can create the dedicated
-session through Ring's normal password and SMS-MFA flow; retained pending
-password state is zeroizing and credentials are never written to configuration.
-Explicit research subcommands still provide refresh-token-only discovery and a
-bounded audio canary; neither is invoked by the service. Direct HTTP sessions
-accept one fully gathered, audio-only PCMU offer, keep signaling alive for at
-most two minutes and close idempotently. A private WebSocket relay lets watchOS
-use the same audio through Home Assistant without WebRTC or bridge secrets.
-The bridge also owns a persistent Android FCM registration for native Intercom
-ding and unlock events. It exposes only a private cursor-based long poll;
-raw vendor payloads and registration keys never cross that boundary. The private
-inventory exposes only routed aliases, physical IDs and safe selection labels.
-Normal Home Assistant setup discovers multiple intercoms after login without
-manual ID copying; see [multiple intercoms](docs/MULTI_INTERCOM.md).
+The released provider supports password/SMS enrollment, multiple intercom
+discovery, status, volume, one-shot unlock, event history, push events and
+full-duplex browser audio. Native Ring doorbells and cameras add experimental,
+signaling-only live video ([native cameras](docs/NATIVE_CAMERAS.md)).
+Recordings contain audio captured during an active Vistoda session; Ring cloud
+recording is not required.
 
-The official Ring application provides two-way audio for Intercom Audio. The
-bridge combines that media path with bounded native status and control calls;
-protocol research stays behind explicit ADR gates.
+Ring supports only IFTTT and Alexa as official third-party integrations. This
+provider therefore uses experimental consumer APIs and can stop working after a
+vendor change. Keep the Ring app for account recovery. Unlock requires an exact
+physical-device binding and is never retried. The Vistoda panel confirms it;
+authorized Home Assistant buttons and automations can invoke it directly.
+
+For Home Assistant OS, use the shared
+[setup guide](https://github.com/luigibarretta/vistoda-addons/blob/main/GETTING_STARTED.md).
+Normal setup discovers intercoms by name and location after login; numeric ID
+copying is not required. See [multiple intercoms](docs/MULTI_INTERCOM.md).
 
 ## Architecture
 
@@ -107,16 +100,21 @@ The native relay accepts exactly 160-byte client PCMU frames and emits bounded
 Ring PCMU payloads. It sends silence while the microphone is muted, shares
 direct-session exclusivity and cooldown, and expires after 120 seconds.
 
-## Installation and recovery guide
+## Installation and recovery
 
-Provider selection, prerequisites, discovery recovery, account reconnection,
-updates, rollback, backups, restore and uninstall are documented in the shared
-[English guide](https://github.com/luigibarretta/vistoda-addons/blob/main/OPERATIONS.md)
-and [Italian guide](https://github.com/luigibarretta/vistoda-addons/blob/main/OPERATIONS.it.md).
+Start with the shared [English setup guide](https://github.com/luigibarretta/vistoda-addons/blob/main/GETTING_STARTED.md)
+or [guida italiana](https://github.com/luigibarretta/vistoda-addons/blob/main/GETTING_STARTED.it.md).
+Account reconnection, updates, rollback, restore and uninstall are in the
+[operations guide](https://github.com/luigibarretta/vistoda-addons/blob/main/OPERATIONS.md).
+The [compatibility matrix](https://github.com/luigibarretta/vistoda-addons/blob/main/COMPATIBILITY.md)
+defines the tested release set.
 Published images include licenses and notices under `/usr/share/doc/vistoda`.
 Only exact version tags passing quality, security and provenance gates are released.
 
 ## Development
+
+Read the family [contribution guide](https://github.com/luigibarretta/vistoda-home-assistant/blob/main/CONTRIBUTING.md)
+first to understand repository ownership and cross-repository release order.
 
 ```bash
 cargo fmt --all -- --check
@@ -158,5 +156,12 @@ See [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and
 - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — safe local operation;
 - [`docs/MULTI_INTERCOM.md`](docs/MULTI_INTERCOM.md) — explicit entrance bindings and safe archive migration;
 - [`docs/adr/`](docs/adr/) — durable architectural decisions.
+
+## Author, support and independence
+
+Vistoda Ring is maintained by [Luigi Barretta](https://github.com/luigibarretta).
+[Support the project on Ko-fi](https://ko-fi.com/luigibarretta). Vistoda is an
+independent project; read the shared [disclaimer](https://github.com/luigibarretta/vistoda-home-assistant/blob/main/DISCLAIMER.md)
+and [accessibility statement](https://github.com/luigibarretta/vistoda-home-assistant/blob/main/ACCESSIBILITY.md).
 
 Licensed under Apache-2.0.

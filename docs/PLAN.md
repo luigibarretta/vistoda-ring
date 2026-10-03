@@ -1,68 +1,64 @@
-# Delivery plan
+# Vistoda Ring release state
 
-Each phase is a hard gate. Later phases may not claim completion from source
-code alone; they require bounded evidence from the owned device.
+This document records the release gates for Vistoda Ring. It is not a roadmap
+promise and does not expand the supported surface described in the repository
+README and OpenAPI contract.
 
-## Phase 0 — repository and safety boundary
+## Released in 0.13.0
 
-- [x] Rust-only repository with Apache-2.0 licensing.
-- [x] CI, dependency audit, container smoke test and 250-line file budget.
-- [x] Threat model and ADRs.
-- [x] Authenticated, fail-closed capability API.
-- [x] Gitea repository and private GitHub push mirror.
+- dedicated password/SMS enrollment with private rotating session storage;
+- discovery and explicit physical binding for one or more Ring Intercoms;
+- native status, volume, one-shot unlock and paginated event history;
+- bounded WebRTC audio with microphone permission controlled by the browser;
+- native push-event cursor with redacted metrics and logs;
+- private local call recordings with selectable HAOS storage;
+- authenticated Home Assistant proxying without browser-visible provider tokens;
+- rootless, read-only multi-architecture images and signed release artifacts.
 
-Exit criterion: clean CI and no Ring session or credential dependency.
+## Added in 0.14
 
-## Phase 1 — protocol evidence
+- native Ring doorbell and camera discovery with signaling-only live sessions;
+  media flows directly between the browser and Ring
+  ([native cameras](NATIVE_CAMERAS.md));
+- rotation of stale native push registrations.
 
-- [x] Pin the inspected upstream client revision and fixed request shapes.
-- [x] Parse a strict, mode-restricted dedicated session file offline.
-- [x] Model refresh and session-registration bodies without password login.
-- [x] Implement bounded read-only discovery with atomic token rotation.
-- [x] Generate only synthetic, create-new discovery evidence.
-- [x] Inventory the exact Intercom Audio device kind through a redacted fixture.
-- [x] Identify the official app call-signalling sequence.
-- [x] Define a redacted semantic evidence format for signaling canaries.
-- [x] Parse and test signaling state transitions without retained vendor data.
+The owned-device release evidence covered enrollment, discovery, inbound and
+outbound PCMU, mute, session teardown, event history and exact device routing.
+Deterministic tests cover failure and privacy boundaries without contacting Ring
+or operating an entrance.
 
-Exit criterion: deterministic fixture tests explain authentication, signalling,
-call start, keepalive and call termination without containing secrets.
+## Release gates
 
-## Phase 2 — receive-only canary
+A Ring release must pass all of these gates:
 
-- [x] Implement bounded UI enrollment for one dedicated, revocable session.
-- [x] Complete one owner-driven live enrollment through Home Assistant.
-- [x] Start an on-demand call with a 30-second hard limit.
-- [x] Receive authenticated RTP audio and verify codec/payload counters.
-- [x] Stop and prove WebSocket, peer connection and silence writer terminate.
-- [x] Complete three consecutive bounded canaries without account warnings.
+1. Rust formatting, strict Clippy, locked tests and dependency audit.
+2. OpenAPI and consumer contract tests for every changed endpoint.
+3. Container startup as the unprivileged runtime user with a read-only root.
+4. No credential, session, SDP, ICE, device identity or event payload in logs.
+5. Exact alias-to-device routing for controls, history, audio and recordings.
+6. Idempotent teardown and no automatic retry of a door action.
+7. Signed `amd64` and `aarch64` images built from the tagged source commit.
+8. Matching Vistoda app metadata and compatibility documentation.
 
-Exit criterion: three consecutive bounded canaries, no account warnings, no
-door action and no residual live session.
+Real-device canaries are explicit and bounded. They stop on account warnings,
+provider throttling, HTTP 401/403/429 or unexpected physical behavior. Door
+opening is never used as a routine release test.
 
-## Phase 3 — full-duplex audio
+## Known boundary
 
-- [x] Negotiate the microphone return direction and send bounded silence.
-- [x] Gate real microphone audio behind an explicit consumer action.
-- [ ] Add echo-safe codec and jitter handling without unbounded buffering.
-- [ ] Prove mute, disconnect and deadline behaviour.
+Ring supports IFTTT and Alexa as its official third-party paths. Vistoda Ring
+uses experimental consumer APIs and is not endorsed or supported by Ring. A
+vendor change can interrupt enrollment, events, controls or media.
 
-Exit criterion: full-duplex canary with packet, memory and lifetime bounds.
+Native push requires outbound HTTPS and TCP 5228 to `mtalk.google.com`.
+Microphone quality still depends on the browser, client hardware, network path
+and the acoustic environment. The provider does not claim Ring cloud recording.
+Native camera live video is experimental: NAT and firewall compatibility of the
+direct browser-to-Ring path still needs per-device acceptance.
 
-## Phase 4 — consumers
+## Future changes
 
-- [x] WebRTC session API and Home Assistant panel contract.
-- [x] Receive-only WebRTC contract for SceneTrove.
-- [x] Capability-driven clients; no provider-specific browser assumptions.
-
-Exit criterion: both consumers pass contract tests while Ring credentials remain
-inside the bridge trust boundary.
-
-## Phase 5 — production operations
-
-- [ ] Immutable OCI image, digest-pinned Ansible deployment and rollback.
-- [ ] Metrics, alerts, canary separation and redacted structured logs.
-- [x] One-call exclusivity, post-call cooldown and account-throttling protection.
-- [ ] Operations documentation and recovery drill.
-
-No Home Assistant deployment or restart occurs before Phase 4.
+New protocol work starts with captured owner-authorized evidence, a redacted
+fixture and an explicit ADR. It remains hidden from consumers until the exact
+device path, recovery behavior, resource bounds and teardown have passed both
+deterministic tests and a deliberate owned-device canary.

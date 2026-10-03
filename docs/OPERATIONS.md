@@ -1,5 +1,8 @@
 # Operations
 
+This is the advanced provider runbook. Home Assistant OS users should begin
+with the shared [installation guide](https://github.com/luigibarretta/vistoda-addons/blob/main/GETTING_STARTED.md).
+
 ## Current phase
 
 The HTTP service advertises verified audio after repeated owned-device canaries.
