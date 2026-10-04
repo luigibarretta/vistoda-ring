@@ -22,7 +22,9 @@ struct HistoryQuery {
 }
 
 pub fn routes() -> Router<Arc<Runtime>> {
-    Router::new().route("/v1/devices/{device}/history", get(history))
+    Router::new()
+        .route("/v1/devices/{device}/history", get(history))
+        .route("/v1/devices/{device}/activity-probe", get(activity_probe))
 }
 
 async fn history(
@@ -44,6 +46,19 @@ async fn history(
         .await?;
     drop(target);
     Ok(Json(page))
+}
+
+/// Read-only, redacted diagnostics: which Ring feeds record app unlocks.
+async fn activity_probe(
+    State(runtime): State<Arc<Runtime>>,
+    Path(device): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::ring_client::ProbeSummary>>, BridgeError> {
+    require_bearer(&headers, &runtime.config.api_token)?;
+    let target = runtime.device(&device)?;
+    let summaries = target.provider.client().await?.activity_probe().await?;
+    drop(target);
+    Ok(Json(summaries))
 }
 
 const fn default_limit() -> u8 {

@@ -23,6 +23,22 @@ History:
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
       "404": {description: Unknown alias.}
       "502": {description: Ring activity history is unavailable.}
+ActivityProbe:
+  parameters:
+    - $ref: "../../openapi.yaml#/components/parameters/DeviceAlias"
+  get:
+    operationId: probeRingActivityFeeds
+    summary: Read-only, redacted diagnostics of Ring activity feeds.
+    description: >-
+      Summarizes each candidate Ring feed by HTTP status, top-level field
+      names, enum-like kind labels and newest timestamp. No IDs, names or free
+      text are returned. Used to find which feed records app unlocks.
+    security: [{bearerAuth: []}]
+    responses:
+      "200": {description: One redacted summary per probed feed.}
+      "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "404": {description: Unknown alias.}
+      "502": {description: Ring is unavailable.}
 ExpectedDevice:
   name: expected_device_id
   in: query

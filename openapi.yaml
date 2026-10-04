@@ -160,6 +160,8 @@ paths:
     $ref: "./docs/openapi/event-paths.yaml#/Events"
   /v1/devices/{device}/history:
     $ref: "./docs/openapi/history-paths.yaml#/History"
+  /v1/devices/{device}/activity-probe:
+    $ref: "./docs/openapi/history-paths.yaml#/ActivityProbe"
   /v1/devices/{device}/audio/sessions/{session}:
     $ref: "./docs/openapi/audio-paths.yaml#/Session"
   /v1/devices/{device}/recordings:

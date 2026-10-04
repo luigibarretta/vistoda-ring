@@ -223,6 +223,9 @@ fn invalidate_auth(state: &mut ClientState) {
 const fn is_unauthorized(error: &BridgeError) -> bool {
     matches!(error, BridgeError::VendorRejected { status: 401, .. })
 }
+#[path = "ring_activity_probe.rs"]
+mod activity_probe;
+pub use activity_probe::ProbeSummary;
 #[path = "ring_audio_grant.rs"]
 mod audio_grant;
 #[path = "ring_camera_provider.rs"]
