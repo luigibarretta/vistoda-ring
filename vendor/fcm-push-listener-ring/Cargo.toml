@@ -1,6 +1,6 @@
 [package]
 name = "fcm-push-listener-ring"
-version = "4.0.3-vistoda.1"
+version = "4.0.3-vistoda.2"
 edition = "2021"
 description = "Vistoda-maintained FCM listener for Ring Android registration"
 license = "MIT"

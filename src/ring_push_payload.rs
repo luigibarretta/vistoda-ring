@@ -24,6 +24,29 @@ pub fn parse_push_event(input: &[u8]) -> Option<ParsedPushEvent> {
     parse_v2(&message).or_else(|| parse_legacy(&message))
 }
 
+/// Redacted shape of a push payload for diagnostics: the v2 category or the
+/// legacy action (Ring constants) and the top-level field names, never values.
+#[must_use]
+pub fn describe_push(input: &[u8]) -> String {
+    let Some(fields) = serde_json::from_slice::<Value>(input)
+        .ok()
+        .and_then(|envelope| envelope.get("data").and_then(Value::as_object).cloned())
+    else {
+        return format!("unparsed ({} bytes)", input.len());
+    };
+    let message = normalize_fields(&fields);
+    let kind = message
+        .get("android_config")
+        .and_then(|config| config.get("category"))
+        .or_else(|| message.get("data")?.get("gcmData")?.get("action"))
+        .and_then(Value::as_str)
+        .filter(|value| value.len() <= 96 && value.bytes().all(|byte| byte.is_ascii_graphic()))
+        .unwrap_or("unknown");
+    let mut keys: Vec<&str> = message.keys().map(String::as_str).take(12).collect();
+    keys.sort_unstable();
+    format!("kind={kind} keys={}", keys.join(","))
+}
+
 fn normalize_fields(fields: &Map<String, Value>) -> Map<String, Value> {
     fields
         .iter()
@@ -39,13 +62,17 @@ fn normalize_fields(fields: &Map<String, Value>) -> Map<String, Value> {
 
 fn parse_v2(message: &Map<String, Value>) -> Option<ParsedPushEvent> {
     let category = message.get("android_config")?.get("category")?.as_str()?;
-    if category != INTERCOM_DING {
-        return None;
-    }
+    // Unlocks have been legacy gcmData pushes; also accept the same action as
+    // a v2 category in case Ring moves them to the live-event schema.
+    let event_type = match category {
+        INTERCOM_DING => RingPushEventKind::Ding,
+        INTERCOM_UNLOCK => RingPushEventKind::IntercomUnlock,
+        _ => return None,
+    };
     let data = message.get("data")?;
     Some(ParsedPushEvent {
         device_id: provider_id(data.get("device")?.get("id")?)?,
-        event_type: RingPushEventKind::Ding,
+        event_type,
         occurred_at: message
             .get("analytics")
             .and_then(|value| value.get("triggered_at"))
@@ -106,5 +133,20 @@ mod tests {
         assert_eq!(event.event_type, RingPushEventKind::IntercomUnlock);
         assert_eq!(event.device_id, "987");
         assert!(parse_push_event(br#"{"data":{"data":"{}"}}"#).is_none());
+    }
+
+    #[test]
+    fn accepts_v2_unlock_category_and_describes_without_values() {
+        let payload = br#"{"data":{"android_config":"{\"category\":\"com.ring.push.INTERCOM_UNLOCK_FROM_APP\",\"body\":\"Mario opened\"}","data":"{\"device\":{\"id\":321}}"}}"#;
+        let event = parse_push_event(payload).unwrap_or_else(|| panic!("v2 unlock was not parsed"));
+        assert_eq!(event.event_type, RingPushEventKind::IntercomUnlock);
+        assert_eq!(event.device_id, "321");
+        let shape = super::describe_push(payload);
+        assert_eq!(
+            shape,
+            "kind=com.ring.push.INTERCOM_UNLOCK_FROM_APP keys=android_config,data"
+        );
+        assert!(!shape.contains("Mario") && !shape.contains("321"));
+        assert_eq!(super::describe_push(b"not json"), "unparsed (8 bytes)");
     }
 }

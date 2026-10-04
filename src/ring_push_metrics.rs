@@ -14,6 +14,7 @@ pub struct RingPushMetrics {
     ding: AtomicU64,
     unlock: AtomicU64,
     ignored: AtomicU64,
+    undecryptable: AtomicU64,
     last_event: AtomicI64,
 }
 
@@ -40,6 +41,10 @@ impl RingPushMetrics {
 
     pub fn ignored(&self) {
         self.ignored.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn undecryptable(&self) {
+        self.undecryptable.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn received(&self, kind: RingPushEventKind, occurred_at: i64) {
@@ -88,6 +93,11 @@ impl RingPushMetrics {
             &mut output,
             "vistoda_ring_push_ignored_total",
             self.ignored.load(Ordering::Relaxed),
+        );
+        counter(
+            &mut output,
+            "vistoda_ring_push_undecryptable_total",
+            self.undecryptable.load(Ordering::Relaxed),
         );
         gauge(
             &mut output,

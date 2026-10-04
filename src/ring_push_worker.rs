@@ -18,9 +18,8 @@ use crate::{
     ring_provider::RingProvider,
     ring_push_event::RingPushEvents,
     ring_push_metrics::RingPushMetrics,
-    ring_push_payload::parse_push_event,
     ring_push_store::{RingPushState, RingPushStore},
-    ring_push_support::{fcm_client, unix_timestamp},
+    ring_push_support::fcm_client,
 };
 
 const FIREBASE_APP_ID: &str = "1:876313859327:android:e10ec6ddb3c81f39";
@@ -33,8 +32,8 @@ const MAX_RETRY: Duration = Duration::from_mins(5);
 pub enum PushError {
     #[error("Ring push provider operation failed")]
     Provider(#[from] BridgeError),
-    #[error("Ring FCM {0} failed")]
-    Fcm(&'static str),
+    #[error("Ring FCM {0} failed: {1}")]
+    Fcm(&'static str, String),
 }
 
 pub struct RingPushService {
@@ -140,7 +139,7 @@ impl RingPushService {
                 None,
             )
             .await
-            .map_err(|_| PushError::Fcm("registration"))?;
+            .map_err(|error| PushError::Fcm("registration", dispatch::bounded(&error)))?;
             let state = RingPushState {
                 registration,
                 persistent_ids: Vec::new(),
@@ -164,7 +163,7 @@ impl RingPushService {
             .gcm
             .checkin(&http)
             .await
-            .map_err(|_| PushError::Fcm("check-in"))?;
+            .map_err(|error| PushError::Fcm("check-in", dispatch::bounded(&error)))?;
         if checked.changed(&state.registration.gcm) {
             state.registration.gcm = checked.session();
             self.persist(&state).await?;
@@ -172,7 +171,7 @@ impl RingPushService {
         let connection = checked
             .new_connection(state.persistent_ids.clone())
             .await
-            .map_err(|_| PushError::Fcm("connection"))?;
+            .map_err(|error| PushError::Fcm("connection", dispatch::bounded(&error)))?;
         let mut stream = MessageStream::wrap(connection, &state.registration.keys);
         self.metrics.set_connected(true);
         loop {
@@ -183,14 +182,33 @@ impl RingPushService {
             let Some(message) = message else {
                 break;
             };
-            match message.map_err(|_| PushError::Fcm("message decoding"))? {
-                Message::HeartbeatPing => stream
-                    .write_all(&new_heartbeat_ack())
-                    .await
-                    .map_err(|_| PushError::Fcm("heartbeat acknowledgement"))?,
+            // Only transport failures reach here; per-message problems arrive as
+            // `Undecryptable` and must not drop the connection.
+            match message
+                .map_err(|error| PushError::Fcm("connection", dispatch::bounded(&error)))?
+            {
+                Message::HeartbeatPing => {
+                    stream
+                        .write_all(&new_heartbeat_ack())
+                        .await
+                        .map_err(|error| {
+                            PushError::Fcm("heartbeat acknowledgement", dispatch::bounded(&error))
+                        })?;
+                }
                 Message::Data(message) => {
                     self.handle_message(&device_id, &message.body).await;
                     if let Some(id) = message.persistent_id {
+                        state.remember(id);
+                        self.persist(&state).await?;
+                    }
+                }
+                Message::Undecryptable {
+                    persistent_id,
+                    error,
+                } => {
+                    self.handle_undecryptable(&error);
+                    // Acknowledge it so FCM stops redelivering the same stanza.
+                    if let Some(id) = persistent_id {
                         state.remember(id);
                         self.persist(&state).await?;
                     }
@@ -201,34 +219,11 @@ impl RingPushService {
         Ok(true)
     }
 
-    async fn handle_message(&self, device_ids: &[String], body: &[u8]) {
-        let Some(event) = parse_push_event(body) else {
-            self.metrics.ignored();
-            return;
-        };
-        if !device_ids.contains(&event.device_id) {
-            self.metrics.ignored();
-            return;
-        }
-        let occurred_at = event.occurred_at.unwrap_or_else(unix_timestamp);
-        let id = event.device_id.parse::<u64>().ok();
-        if let Ok(queue) = self.events.get(id) {
-            queue.publish(event.event_type, occurred_at).await;
-        }
-        if device_ids.len() == 1
-            && let Ok(queue) = self.events.get(None)
-        {
-            queue.publish(event.event_type, occurred_at).await;
-        }
-        self.metrics.received(event.event_type, occurred_at);
-        tracing::info!(event_type = ?event.event_type, "Ring push event received");
-    }
-
     async fn load(&self) -> Result<Option<RingPushState>, PushError> {
         let store = Arc::clone(&self.store);
         tokio::task::spawn_blocking(move || store.load())
             .await
-            .map_err(|_| PushError::Fcm("state load"))?
+            .map_err(|error| PushError::Fcm("state load", dispatch::bounded(&error)))?
             .map_err(Into::into)
     }
 
@@ -240,10 +235,13 @@ impl RingPushService {
         };
         tokio::task::spawn_blocking(move || store.persist(&state))
             .await
-            .map_err(|_| PushError::Fcm("state persistence"))?
+            .map_err(|error| PushError::Fcm("state persistence", dispatch::bounded(&error)))?
             .map_err(Into::into)
     }
 }
+
+#[path = "ring_push_dispatch.rs"]
+mod dispatch;
 
 #[cfg(test)]
 #[path = "ring_push_multidevice_tests.rs"]

@@ -943,7 +943,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "fcm-push-listener-ring"
-version = "4.0.3-vistoda.1"
+version = "4.0.3-vistoda.2"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2341,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "ring-intercom-bridge"
-version = "0.14.1"
+version = "0.14.2"
 dependencies = [
  "async-trait",
  "axum",

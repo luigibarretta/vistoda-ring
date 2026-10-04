@@ -56,6 +56,13 @@ impl TryFrom<u8> for MessageTag {
 pub enum Message {
     HeartbeatPing,
     Data(DataMessage),
+    /// A data stanza that could not be decrypted. It is surfaced (instead of
+    /// failing the stream) so the consumer can acknowledge its persistent ID
+    /// and keep the connection alive.
+    Undecryptable {
+        persistent_id: Option<String>,
+        error: Error,
+    },
     Other(u8, Bytes),
 }
 
@@ -65,14 +72,39 @@ pub struct DataMessage {
 }
 
 impl DataMessage {
-    fn decode(eckey: &EcKeyComponents, auth_secret: &[u8], bytes: &[u8]) -> Result<Self, Error> {
+    fn decode(eckey: &EcKeyComponents, auth_secret: &[u8], bytes: &[u8]) -> Message {
+        use prost::Message as _;
+
+        let message = match crate::mcs::DataMessageStanza::decode(bytes) {
+            Ok(message) => message,
+            Err(e) => {
+                return Message::Undecryptable {
+                    persistent_id: None,
+                    error: Error::ProtobufDecode("FCM data message", e),
+                }
+            }
+        };
+        let persistent_id = message.persistent_id.clone();
+        match Self::decrypt(eckey, auth_secret, message) {
+            Ok(body) => Message::Data(Self {
+                body,
+                persistent_id,
+            }),
+            Err(error) => Message::Undecryptable {
+                persistent_id,
+                error,
+            },
+        }
+    }
+
+    fn decrypt(
+        eckey: &EcKeyComponents,
+        auth_secret: &[u8],
+        message: crate::mcs::DataMessageStanza,
+    ) -> Result<Vec<u8>, Error> {
         use base64::engine::general_purpose::URL_SAFE;
         use base64::Engine;
         use ece::legacy::AesGcmEncryptedBlock;
-        use prost::Message;
-
-        let message = crate::mcs::DataMessageStanza::decode(bytes)
-            .map_err(|e| Error::ProtobufDecode("FCM data message", e))?;
 
         let bytes = match message.raw_data {
             Some(v) => v,
@@ -80,6 +112,16 @@ impl DataMessage {
                 return Err(Error::EmptyPayload);
             }
         };
+        const OPERATION: &str = "message decryption";
+        let has_legacy_headers = message
+            .app_data
+            .iter()
+            .any(|field| matches!(field.key.as_str(), "crypto-key" | "encryption"));
+        if !has_legacy_headers {
+            // RFC 8291 `aes128gcm` carries salt and sender key in the payload header.
+            return ece::decrypt(eckey, auth_secret, &bytes)
+                .map_err(|e| Error::Crypto(OPERATION, e));
+        }
 
         let mut kex: Vec<u8> = Vec::default();
         let mut salt: Vec<u8> = Vec::default();
@@ -115,15 +157,10 @@ impl DataMessage {
 
         // The record size default is 4096 and doesn't seem to be overridden for FCM.
         const RECORD_SIZE: u32 = 4096;
-        const OPERATION: &str = "message decryption";
         let block = AesGcmEncryptedBlock::new(&kex, &salt, RECORD_SIZE, bytes)
             .map_err(|e| Error::Crypto(OPERATION, e))?;
-        let body = ece::legacy::decrypt_aesgcm(eckey, auth_secret, &block)
-            .map_err(|e| Error::Crypto(OPERATION, e))?;
-        Ok(Self {
-            body,
-            persistent_id: message.persistent_id,
-        })
+        ece::legacy::decrypt_aesgcm(eckey, auth_secret, &block)
+            .map_err(|e| Error::Crypto(OPERATION, e))
     }
 }
 
@@ -235,10 +272,7 @@ where
                     let bytes = self.receive_buffer.split_to(size);
                     return Poll::Ready(Some(Ok(match tag {
                         Ok(MessageTag::DataMessageStanza) => {
-                            match DataMessage::decode(&self.eckey, &self.auth_secret, &bytes) {
-                                Err(e) => return Poll::Ready(Some(Err(e))),
-                                Ok(m) => Message::Data(m),
-                            }
+                            DataMessage::decode(&self.eckey, &self.auth_secret, &bytes)
                         }
                         Ok(MessageTag::HeartbeatPing) => Message::HeartbeatPing,
                         _ => Message::Other(tag_value, bytes.into()),
@@ -315,7 +349,60 @@ pub fn new_heartbeat_ack() -> BytesMut {
 
 #[cfg(test)]
 mod tests {
-    use super::padded_header_value;
+    use super::{padded_header_value, DataMessage, Message};
+
+    fn stanza(raw_data: Option<Vec<u8>>, persistent_id: &str) -> Vec<u8> {
+        let message = crate::mcs::DataMessageStanza {
+            raw_data,
+            persistent_id: Some(persistent_id.into()),
+            ..Default::default()
+        };
+        prost::Message::encode_to_vec(&message)
+    }
+
+    #[test]
+    fn decrypts_rfc8291_aes128gcm_payloads_without_legacy_headers() {
+        let (keys, auth) =
+            ece::generate_keypair_and_auth_secret().unwrap_or_else(|error| panic!("keys: {error}"));
+        let public = keys
+            .pub_as_raw()
+            .unwrap_or_else(|error| panic!("public: {error}"));
+        let components = keys
+            .raw_components()
+            .unwrap_or_else(|error| panic!("raw: {error}"));
+        let body = br#"{"data":{"gcmData":"{}"}}"#;
+        let encrypted =
+            ece::encrypt(&public, &auth, body).unwrap_or_else(|error| panic!("{error}"));
+        match DataMessage::decode(&components, &auth, &stanza(Some(encrypted), "p-1")) {
+            Message::Data(message) => {
+                assert_eq!(message.body, body);
+                assert_eq!(message.persistent_id.as_deref(), Some("p-1"));
+            }
+            _ => panic!("aes128gcm payload was not decrypted"),
+        }
+    }
+
+    #[test]
+    fn undecryptable_payloads_keep_their_persistent_id() {
+        let (keys, auth) =
+            ece::generate_keypair_and_auth_secret().unwrap_or_else(|error| panic!("keys: {error}"));
+        let components = keys
+            .raw_components()
+            .unwrap_or_else(|error| panic!("raw: {error}"));
+        match DataMessage::decode(&components, &auth, &stanza(None, "p-2")) {
+            Message::Undecryptable { persistent_id, .. } => {
+                assert_eq!(persistent_id.as_deref(), Some("p-2"));
+            }
+            _ => panic!("an empty payload must be reported, not dropped"),
+        }
+        assert!(matches!(
+            DataMessage::decode(&components, &auth, b"\xff\xff"),
+            Message::Undecryptable {
+                persistent_id: None,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn web_push_headers_are_named_bounded_and_padded() {
