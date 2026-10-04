@@ -169,6 +169,14 @@ PushEvent:
     sequence: {type: integer, format: int64, minimum: 1}
     event_type: {enum: [ding, intercom_unlock]}
     occurred_at: {type: integer, format: int64, minimum: 0}
+    origin:
+      description: Unlocks read from Ring's event history only.
+      enum: [user, device, code, delivery]
+    actor:
+      description: Ring's display name of who unlocked, when known.
+      type: string
+      minLength: 1
+      maxLength: 64
 PushEventBatch:
   type: object
   additionalProperties: false

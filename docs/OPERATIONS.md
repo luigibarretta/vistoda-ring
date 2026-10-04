@@ -137,6 +137,9 @@ at most 15 minutes late), an Intercom enrolled later starts from its first
 poll, and a push and a history report of the same unlock within 15 seconds
 are published once. A failing Intercom never blocks the others; each failure
 increments `vistoda_ring_unlock_history_errors_total`.
+History unlocks carry Ring's `origin` (`user`, `device`, `code`, `delivery`)
+and, when known, the display name of who unlocked as `actor`; the name is
+returned only on the authenticated event cursor and never logged.
 
 ## Local call recording archive
 

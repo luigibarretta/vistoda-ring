@@ -14,11 +14,24 @@ pub enum RingPushEventKind {
     IntercomUnlock,
 }
 
+/// Who unlocked, as recorded in Ring's event history; push events carry none.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct UnlockDetail {
+    /// One of Ring's unlock origins: `user`, `device`, `code` or `delivery`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// Ring's display name of the person who unlocked, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RingPushEvent {
     pub sequence: u64,
     pub event_type: RingPushEventKind,
     pub occurred_at: i64,
+    #[serde(flatten)]
+    pub detail: UnlockDetail,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,8 +70,18 @@ impl Default for RingPushEvents {
 }
 
 impl RingPushEvents {
-    /// Returns false when the same unlock was already published.
     pub async fn publish(&self, event_type: RingPushEventKind, occurred_at: i64) -> bool {
+        self.publish_detailed(event_type, occurred_at, UnlockDetail::default())
+            .await
+    }
+
+    /// Returns false when the same unlock was already published.
+    pub async fn publish_detailed(
+        &self,
+        event_type: RingPushEventKind,
+        occurred_at: i64,
+        detail: UnlockDetail,
+    ) -> bool {
         let mut state = self.state.lock().await;
         if event_type == RingPushEventKind::IntercomUnlock
             && state.events.iter().any(|event| {
@@ -74,6 +97,7 @@ impl RingPushEvents {
             sequence,
             event_type,
             occurred_at,
+            detail,
         });
         while state.events.len() > EVENT_LIMIT {
             state.events.pop_front();
@@ -114,7 +138,7 @@ impl RingPushEvents {
 
 #[cfg(test)]
 mod tests {
-    use super::{RingPushEventKind, RingPushEvents};
+    use super::{RingPushEventKind, RingPushEvents, UnlockDetail};
     use std::time::Duration;
 
     #[tokio::test]
@@ -128,5 +152,21 @@ mod tests {
         assert_eq!(batch.len(), 2);
         assert_eq!(batch[0].sequence, 2);
         assert_eq!(batch[0].event_type, RingPushEventKind::IntercomUnlock);
+        let plain = serde_json::to_value(&batch[0]).unwrap_or_default();
+        assert!(plain.get("origin").is_none() && plain.get("actor").is_none());
+        let detail = UnlockDetail {
+            origin: Some("user".into()),
+            actor: Some("Luigi".into()),
+        };
+        let events = RingPushEvents::default();
+        assert!(
+            events
+                .publish_detailed(RingPushEventKind::IntercomUnlock, 50, detail)
+                .await
+        );
+        let shown = serde_json::to_value(&events.wait_after(0, Duration::ZERO).await[0])
+            .unwrap_or_default();
+        assert_eq!(shown["origin"], "user");
+        assert_eq!(shown["actor"], "Luigi");
     }
 }

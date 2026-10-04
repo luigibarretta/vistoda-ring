@@ -122,7 +122,8 @@ impl RingPushService {
                     event_type: RingPushEventKind::IntercomUnlock,
                     occurred_at: Some(unlock.occurred_at),
                 };
-                self.publish(&devices, event, "history").await;
+                self.publish(&devices, event, unlock.detail, "history")
+                    .await;
             }
         }
         read
@@ -166,12 +167,13 @@ impl RingPushService {
 #[cfg(test)]
 mod tests {
     use super::UnlockCursor;
-    use crate::ring_client::UnlockRecord;
+    use crate::{ring_client::UnlockRecord, ring_push_event::UnlockDetail};
 
     fn unlock(id: &str, at: i64) -> UnlockRecord {
         UnlockRecord {
             event_id: id.into(),
             occurred_at: at,
+            detail: UnlockDetail::default(),
         }
     }
 

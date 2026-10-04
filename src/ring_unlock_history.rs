@@ -8,9 +8,12 @@ use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::RingClient;
-use crate::error::BridgeError;
+use crate::{error::BridgeError, ring_push_event::UnlockDetail};
 
 const UNLOCK_EVENT_TYPE: &str = "Door.Unlock";
+/// Ring's unlock origins (`UnlockOrigin` in the official app).
+pub(super) const ORIGINS: &[&str] = &["user", "delivery", "device", "code"];
+const ACTOR_LIMIT: usize = 64;
 const PAGE_LIMIT: &str = "20";
 const BODY_LIMIT: usize = 2 * 1024 * 1024;
 
@@ -18,6 +21,7 @@ const BODY_LIMIT: usize = 2 * 1024 * 1024;
 pub struct UnlockRecord {
     pub event_id: String,
     pub occurred_at: i64,
+    pub detail: UnlockDetail,
 }
 
 #[derive(Deserialize)]
@@ -31,6 +35,8 @@ struct Item {
     event_id: Option<Value>,
     event_type: Option<String>,
     start_time: Option<String>,
+    origin: Option<String>,
+    origin_display_name: Option<String>,
 }
 
 impl RingClient {
@@ -86,23 +92,38 @@ pub fn parse_unlocks(body: &[u8]) -> Result<Vec<UnlockRecord>, BridgeError> {
             let occurred_at = OffsetDateTime::parse(item.start_time.as_deref()?, &Rfc3339)
                 .ok()?
                 .unix_timestamp();
+            let detail = UnlockDetail {
+                origin: item
+                    .origin
+                    .filter(|origin| ORIGINS.contains(&origin.as_str())),
+                actor: item.origin_display_name.as_deref().and_then(display_name),
+            };
             (!event_id.is_empty() && event_id.len() <= 128).then_some(UnlockRecord {
                 event_id,
                 occurred_at,
+                detail,
             })
         })
         .collect())
 }
 
+/// A short printable name, or nothing.
+fn display_name(name: &str) -> Option<String> {
+    let name = name.trim();
+    (!name.is_empty() && name.chars().count() <= ACTOR_LIMIT && !name.chars().any(char::is_control))
+        .then(|| name.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{UnlockRecord, parse_unlocks};
+    use crate::ring_push_event::UnlockDetail;
 
     #[test]
     fn keeps_only_well_formed_unlocks() {
         let body = br#"{"items":[
-            {"event_id":"e1","event_type":"Door.Unlock","start_time":"2026-10-04T08:34:09.013Z","origin":"user"},
-            {"event_id":7,"event_type":"Door.Unlock","start_time":"2026-10-04T08:30:00Z"},
+            {"event_id":"e1","event_type":"Door.Unlock","start_time":"2026-10-04T08:34:09.013Z","origin":"user","origin_display_name":" Luigi "},
+            {"event_id":7,"event_type":"Door.Unlock","start_time":"2026-10-04T08:30:00Z","origin":"Mario","origin_display_name":"a\nb"},
             {"event_id":"e3","event_type":"ding","start_time":"2026-10-04T08:31:00Z"},
             {"event_id":"e4","event_type":"Door.Unlock","start_time":"yesterday"},
             {"event_type":"Door.Unlock","start_time":"2026-10-04T08:32:00Z"}
@@ -114,10 +135,15 @@ mod tests {
                 UnlockRecord {
                     event_id: "e1".into(),
                     occurred_at: 1_791_102_849,
+                    detail: UnlockDetail {
+                        origin: Some("user".into()),
+                        actor: Some("Luigi".into()),
+                    },
                 },
                 UnlockRecord {
                     event_id: "7".into(),
                     occurred_at: 1_791_102_600,
+                    detail: UnlockDetail::default(),
                 },
             ]
         );

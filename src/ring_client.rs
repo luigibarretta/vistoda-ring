@@ -236,6 +236,8 @@ mod controls;
 mod history;
 #[path = "ring_push_provider.rs"]
 mod push;
+#[path = "ring_settings_probe.rs"]
+mod settings_probe;
 #[path = "ring_unlock_history.rs"]
 mod unlock_history;
 pub use unlock_history::UnlockRecord;

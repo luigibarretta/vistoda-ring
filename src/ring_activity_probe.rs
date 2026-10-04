@@ -8,7 +8,7 @@ use reqwest::Method;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::RingClient;
+use super::{RingClient, unlock_history::ORIGINS};
 use crate::error::BridgeError;
 
 const PROBE_BODY_LIMIT: usize = 2 * 1024 * 1024;
@@ -23,9 +23,6 @@ const KIND_KEYS: &[&str] = &[
     "eventType",
     "origin",
 ];
-/// Ring's unlock origins (`UnlockOrigin` in the official app); any other
-/// `origin` value could be a person's name and is not reported.
-const ORIGINS: &[&str] = &["user", "delivery", "device", "code"];
 /// Only this feed is a bare list of enum strings worth reporting verbatim.
 const ENUM_LIST_SOURCE: &str = "notification_event_types";
 const TIME_KEYS: &[&str] = &[
@@ -44,6 +41,9 @@ pub struct ProbeSummary {
     pub top_level_keys: Vec<String>,
     pub kinds: BTreeMap<String, u32>,
     pub newest: Option<String>,
+    /// Redacted vendor error text of a rejected request.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 impl RingClient {
@@ -60,11 +60,6 @@ impl RingClient {
                 "locations_events",
                 format!("{}/locations/{location}/events", self.endpoints.client_api),
                 vec![("limit".to_owned(), "20".to_owned())],
-            ),
-            (
-                "notification_event_types",
-                format!("{root}/notification_settings/v1/doorbots/{id}/event_types"),
-                Vec::new(),
             ),
             (
                 "evm_device_history",
@@ -101,6 +96,7 @@ impl RingClient {
                 Err(error) => return Err(error),
             });
         }
+        summaries.extend(self.notification_settings_probe(id).await?);
         Ok(summaries)
     }
 }
@@ -120,7 +116,12 @@ pub fn summarize(source: &'static str, body: &[u8]) -> ProbeSummary {
         Value::Array(items) => vec![format!("array[{}]", items.len())],
         _ => vec!["scalar".to_owned()],
     };
-    walk(&value, &mut summary, 0, source == ENUM_LIST_SOURCE);
+    walk(
+        &value,
+        &mut summary,
+        0,
+        source.starts_with(ENUM_LIST_SOURCE),
+    );
     summary
 }
 

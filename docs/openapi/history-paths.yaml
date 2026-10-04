@@ -33,7 +33,9 @@ ActivityProbe:
       Summarizes each candidate Ring feed by HTTP status, top-level field
       names, enum-like kind labels and newest timestamp. No IDs, names or free
       text are returned. Probes the location events, the per-device
-      notification event types and the device event history with `capabilities=ringtercom`
+      notification event types (once per cumulative set of the official
+      app's request headers, with a digit-masked `error` text when rejected)
+      and the device event history with `capabilities=ringtercom`
       (`event_type=Door.Unlock`, `origin=user|device|code|delivery`).
     security: [{bearerAuth: []}]
     responses:

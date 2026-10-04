@@ -8,6 +8,7 @@ use super::RingPushService;
 use crate::{
     error::BridgeError,
     ring_client::RingClient,
+    ring_push_event::UnlockDetail,
     ring_push_payload::{ParsedPushEvent, describe_push, parse_push_event},
     ring_push_support::unix_timestamp,
 };
@@ -39,7 +40,8 @@ impl RingPushService {
             tracing::info!(shape = %describe_push(body), "Ring push message not recognized");
             return;
         };
-        self.publish(device_ids, event, "push").await;
+        self.publish(device_ids, event, UnlockDetail::default(), "push")
+            .await;
     }
 
     /// Publish one event from push or history; queues drop a repeated unlock.
@@ -47,6 +49,7 @@ impl RingPushService {
         &self,
         device_ids: &[String],
         event: ParsedPushEvent,
+        detail: UnlockDetail,
         path: &'static str,
     ) {
         if !device_ids.contains(&event.device_id) {
@@ -57,13 +60,19 @@ impl RingPushService {
         let occurred_at = event.occurred_at.unwrap_or_else(unix_timestamp);
         let id = event.device_id.parse::<u64>().ok();
         let mut published = match self.events.get(id) {
-            Ok(queue) => queue.publish(event.event_type, occurred_at).await,
+            Ok(queue) => {
+                queue
+                    .publish_detailed(event.event_type, occurred_at, detail.clone())
+                    .await
+            }
             Err(_) => false,
         };
         if device_ids.len() == 1
             && let Ok(queue) = self.events.get(None)
         {
-            published |= queue.publish(event.event_type, occurred_at).await;
+            published |= queue
+                .publish_detailed(event.event_type, occurred_at, detail)
+                .await;
         }
         if !published {
             tracing::info!(event_type = ?event.event_type, path, "Ring event already published");
