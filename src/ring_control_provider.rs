@@ -48,6 +48,7 @@ impl RingClient {
             mic_volume,
             voice_volume,
             last_activity,
+            unlock_settings: device.unlock_settings(),
         })
     }
 

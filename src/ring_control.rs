@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::BridgeError;
+use crate::{BridgeError, ring_unlock_settings::RingUnlockSettings};
 
 pub struct AudioCallGrant {
     pub device_id: u64,
@@ -16,6 +16,9 @@ pub struct RingDeviceStatus {
     pub mic_volume: Option<u8>,
     pub voice_volume: Option<u8>,
     pub last_activity: Option<i64>,
+    /// Read-only Intercom unlock settings; omitted when Ring reports none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unlock_settings: Option<RingUnlockSettings>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

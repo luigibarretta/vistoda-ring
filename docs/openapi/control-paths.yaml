@@ -21,6 +21,32 @@ Status:
                 mic_volume: {type: [integer, "null"], minimum: 0, maximum: 11}
                 voice_volume: {type: [integer, "null"], minimum: 0, maximum: 11}
                 last_activity: {type: [integer, "null"], minimum: 0}
+                unlock_settings:
+                  type: object
+                  additionalProperties: false
+                  description: >-
+                    Read-only Intercom unlock settings from Ring device
+                    discovery (`settings.intercom_settings`), as managed in the
+                    Ring app under Unlock Settings. Omitted when Ring reports
+                    none; each field is omitted when unknown or malformed.
+                  properties:
+                    mode:
+                      type: string
+                      enum: [direct, ring_to_open]
+                      description: >-
+                        `direct` opens on any unlock command; `ring_to_open`
+                        means the building system only opens during an active
+                        call, so an unlock without someone pressing the call
+                        button can be accepted by Ring yet leave the door shut.
+                    ring_to_open_enabled: {type: boolean}
+                    duration_seconds:
+                      type: integer
+                      minimum: 0
+                      maximum: 600
+                      description: >-
+                        Analog systems only; whole seconds the door stays
+                        unlocked (0 = under one second). A building system may
+                        override it.
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
       "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: Unknown alias}

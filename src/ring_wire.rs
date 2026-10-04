@@ -4,7 +4,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
-use crate::error::BridgeError;
+use crate::{
+    error::BridgeError,
+    ring_unlock_settings::{RingUnlockSettings, parse_unlock_settings},
+};
 
 const MAX_DEVICES: usize = 512;
 const MAX_DESCRIPTION_BYTES: usize = 128;
@@ -56,6 +59,7 @@ pub struct RingIntercomIdentity {
     doorbell_volume: Option<u8>,
     mic_volume: Option<u8>,
     voice_volume: Option<u8>,
+    unlock_settings: Option<RingUnlockSettings>,
 }
 
 #[derive(Default, Deserialize)]
@@ -66,6 +70,8 @@ struct RawSettings {
     mic: Option<u8>,
     #[serde(default, rename = "voice_volume")]
     voice: Option<u8>,
+    #[serde(default)]
+    intercom_settings: Option<Value>,
 }
 
 #[derive(Default, Deserialize)]
@@ -103,6 +109,11 @@ impl RingIntercomIdentity {
     #[must_use]
     pub const fn volumes(&self) -> (Option<u8>, Option<u8>, Option<u8>) {
         (self.doorbell_volume, self.mic_volume, self.voice_volume)
+    }
+
+    #[must_use]
+    pub fn unlock_settings(&self) -> Option<RingUnlockSettings> {
+        self.unlock_settings.clone()
     }
 }
 
@@ -161,6 +172,7 @@ pub fn parse_devices(input: &[u8]) -> Result<Vec<RingIntercomIdentity>, BridgeEr
             doorbell_volume: device.settings.doorbell,
             mic_volume: device.settings.mic,
             voice_volume: device.settings.voice,
+            unlock_settings: parse_unlock_settings(device.settings.intercom_settings.as_ref()),
         });
     }
     Ok(intercoms)

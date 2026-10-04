@@ -124,6 +124,36 @@ post-call cooldown. While muted, the client sends no audio and the bridge
 supplies PCMU silence. Inspect aggregate relay frame/drop counters under
 `/metrics`; no device or session identifier is emitted.
 
+## Intercom unlock settings
+
+The official Ring app keeps two Intercom settings under "Unlock Settings" that
+decide whether a remote unlock actually opens the door. Once that app is
+uninstalled they are invisible, so `GET /v1/devices/{device}/status` reports
+them read-only as the optional `unlock_settings` object. The values come from
+`settings.intercom_settings` of the Intercom in the device discovery response
+the status call already fetches; no extra Ring request is made. The object is
+omitted when Ring reports no such settings, and each field is omitted when its
+value is missing, malformed or out of range.
+
+- `mode` / `ring_to_open_enabled` mirror the Ring app's "Unlock Type"
+  (`intercom_settings.ring_to_open`):
+  - `direct` ("Direct Unlock"): the building system opens at any time, so
+    Vistoda's open-door command releases the door directly.
+  - `ring_to_open` ("Ring-to-Open"): the building system only opens during an
+    active call. Ring may accept Vistoda's unlock command while the door stays
+    shut unless someone is pressing the call button for the unit at the
+    entrance panel. If open-door "succeeds" but nothing happens, check this
+    mode first; switching it requires the Ring app.
+- `duration_seconds` is the "Unlock Duration" of analog building systems
+  (`analog.unlock_duration` inside the `intercom_settings.config` document,
+  stored by Ring in milliseconds and reported here in whole seconds; 0 means
+  under one second). The Ring app offers 1 to 10 seconds. A very short value
+  can release the lock before the door is pushed; the building may also
+  override it. Digital systems do not expose it.
+
+The integer `intercom_settings.unlock_mode` is present in Ring's model but is
+not read by the Ring app, so its meaning is unknown and it is not reported.
+
 ## Intercom unlock events
 
 Ring pushes dings to this client but not unlocks made from the official Ring

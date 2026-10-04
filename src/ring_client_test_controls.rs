@@ -69,7 +69,9 @@ pub async fn discover(State(state): State<Arc<MockState>>, headers: HeaderMap) -
     "other": [
         {"id": 42, "kind": "intercom_handset_audio", "description": "Synthetic Entrance Intercom",
          "location_id": "loc-1", "battery_life": "73", "alerts": {"connection": "online"},
-         "settings": {"doorbell_volume": 6, "mic_volume": 10, "voice_volume": 9}},
+         "settings": {"doorbell_volume": 6, "mic_volume": 10, "voice_volume": 9,
+            "intercom_settings": {"ring_to_open": true, "unlock_mode": 0, "intercom_type": "SYNTHETIC",
+                "config": "{\"analog\":{\"unlock_duration\":2000}}"}}},
         {"id": 43, "kind": if state.additional_intercoms > 0 { "intercom_handset_audio" } else { "third_party_garage_door_opener" },
          "description": "Synthetic Other", "location_id": "loc-1", "alerts": {"connection": "online"}}
     ]})).into_response()

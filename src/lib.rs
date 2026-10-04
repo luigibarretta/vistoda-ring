@@ -66,6 +66,7 @@ mod ring_session_gate;
 mod ring_session_reason;
 mod ring_signal_wire;
 mod ring_signaling;
+pub mod ring_unlock_settings;
 mod ring_video;
 #[cfg(test)]
 mod ring_video_session_tests;

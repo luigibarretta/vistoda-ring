@@ -7,6 +7,7 @@ pub mod support;
 
 use crate::ring_control::VolumeUpdate;
 use crate::ring_history::RingHistoryEventType;
+use crate::ring_unlock_settings::RingUnlockMode;
 use support::{MockState, assert_session_token, test_client};
 
 #[tokio::test]
@@ -165,6 +166,9 @@ async fn native_status_includes_battery_volumes_and_activity() {
     assert_eq!(status.mic_volume, Some(10));
     assert_eq!(status.voice_volume, Some(9));
     assert_eq!(status.last_activity, Some(1_786_795_500));
+    let unlock = status.unlock_settings.unwrap_or_default();
+    assert_eq!(unlock.mode, Some(RingUnlockMode::RingToOpen));
+    assert_eq!(unlock.duration_seconds, Some(2));
 }
 
 #[tokio::test]
