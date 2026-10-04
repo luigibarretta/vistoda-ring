@@ -124,6 +124,20 @@ post-call cooldown. While muted, the client sends no audio and the bridge
 supplies PCMU silence. Inspect aggregate relay frame/drop counters under
 `/metrics`; no device or session identifier is emitted.
 
+## Intercom unlock events
+
+Ring pushes dings to this client but not unlocks made from the official Ring
+app, which it records only in the device event history
+(`evm/v2/history/devices` with `capabilities=ringtercom`, items
+`Door.Unlock`). The bridge polls that history every 20 seconds (backing off to
+five minutes on errors) and publishes new unlocks through the same event
+cursor as push, so Home Assistant notifies them up to about 20 seconds late.
+Unlocks older than the bridge start are never replayed (after a failing start,
+at most 15 minutes late), an Intercom enrolled later starts from its first
+poll, and a push and a history report of the same unlock within 15 seconds
+are published once. A failing Intercom never blocks the others; each failure
+increments `vistoda_ring_unlock_history_errors_total`.
+
 ## Local call recording archive
 
 Vistoda records only an active browser communication. Its recorder mixes the

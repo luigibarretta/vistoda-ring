@@ -8,7 +8,7 @@ use super::RingPushService;
 use crate::{
     error::BridgeError,
     ring_client::RingClient,
-    ring_push_payload::{describe_push, parse_push_event},
+    ring_push_payload::{ParsedPushEvent, describe_push, parse_push_event},
     ring_push_support::unix_timestamp,
 };
 
@@ -20,31 +20,15 @@ pub(super) fn bounded(error: &impl std::fmt::Display) -> String {
 }
 
 impl RingPushService {
-    /// Subscribe every Intercom to ding and unlock pushes; returns their device
-    /// IDs. The unlock-alert gauge is 1 only when every Intercom is subscribed.
+    /// Subscribe every Intercom to ding pushes; returns their device IDs.
     pub(super) async fn subscribe_devices(
         &self,
         client: &RingClient,
     ) -> Result<Vec<String>, BridgeError> {
-        self.metrics.unlock_alerts(false);
         let mut devices = Vec::new();
-        let mut all_unlock_alerts = true;
         for id in self.events.ids()? {
-            let scoped = client.scoped(id);
-            let device = scoped.subscribe_push_events().await?;
-            // Dings keep working without unlock alerts, so a refusal is reported, not fatal.
-            match scoped.subscribe_unlock_alerts(&device).await {
-                Ok(created) => tracing::info!(created, "Ring unlock alerts are subscribed"),
-                Err(error) => {
-                    all_unlock_alerts = false;
-                    tracing::warn!(error = %error, "Ring unlock alerts could not be subscribed");
-                }
-            }
-            drop(scoped);
-            devices.push(device);
+            devices.push(client.scoped(id).subscribe_push_events().await?);
         }
-        self.metrics
-            .unlock_alerts(all_unlock_alerts && !devices.is_empty());
         Ok(devices)
     }
 
@@ -55,23 +39,38 @@ impl RingPushService {
             tracing::info!(shape = %describe_push(body), "Ring push message not recognized");
             return;
         };
+        self.publish(device_ids, event, "push").await;
+    }
+
+    /// Publish one event from push or history; queues drop a repeated unlock.
+    pub(super) async fn publish(
+        &self,
+        device_ids: &[String],
+        event: ParsedPushEvent,
+        path: &'static str,
+    ) {
         if !device_ids.contains(&event.device_id) {
             self.metrics.ignored();
-            tracing::info!(event_type = ?event.event_type, "Ring push event for another device");
+            tracing::info!(event_type = ?event.event_type, path, "Ring event for another device");
             return;
         }
         let occurred_at = event.occurred_at.unwrap_or_else(unix_timestamp);
         let id = event.device_id.parse::<u64>().ok();
-        if let Ok(queue) = self.events.get(id) {
-            queue.publish(event.event_type, occurred_at).await;
-        }
+        let mut published = match self.events.get(id) {
+            Ok(queue) => queue.publish(event.event_type, occurred_at).await,
+            Err(_) => false,
+        };
         if device_ids.len() == 1
             && let Ok(queue) = self.events.get(None)
         {
-            queue.publish(event.event_type, occurred_at).await;
+            published |= queue.publish(event.event_type, occurred_at).await;
+        }
+        if !published {
+            tracing::info!(event_type = ?event.event_type, path, "Ring event already published");
+            return;
         }
         self.metrics.received(event.event_type, occurred_at);
-        tracing::info!(event_type = ?event.event_type, "Ring push event received");
+        tracing::info!(event_type = ?event.event_type, path, "Ring push event received");
     }
 
     /// One bad stanza must not drop the connection or every later event.

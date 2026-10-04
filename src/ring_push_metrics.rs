@@ -8,7 +8,7 @@ use crate::ring_push_event::RingPushEventKind;
 #[derive(Default)]
 pub struct RingPushMetrics {
     connected: AtomicBool,
-    unlock_alerts: AtomicBool,
+    unlock_history_errors: AtomicU64,
     registrations: AtomicU64,
     reconnects: AtomicU64,
     errors: AtomicU64,
@@ -28,8 +28,8 @@ impl RingPushMetrics {
         self.connected.load(Ordering::Relaxed)
     }
 
-    pub fn unlock_alerts(&self, subscribed: bool) {
-        self.unlock_alerts.store(subscribed, Ordering::Relaxed);
+    pub fn unlock_history_failed(&self) {
+        self.unlock_history_errors.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn registered(&self) {
@@ -68,11 +68,6 @@ impl RingPushMetrics {
             "vistoda_ring_push_connected",
             u64::from(self.connected()),
         );
-        gauge(
-            &mut output,
-            "vistoda_ring_push_unlock_alerts_subscribed",
-            u64::from(self.unlock_alerts.load(Ordering::Relaxed)),
-        );
         counter(
             &mut output,
             "vistoda_ring_push_registrations_total",
@@ -103,6 +98,11 @@ impl RingPushMetrics {
             &mut output,
             "vistoda_ring_push_ignored_total",
             self.ignored.load(Ordering::Relaxed),
+        );
+        counter(
+            &mut output,
+            "vistoda_ring_unlock_history_errors_total",
+            self.unlock_history_errors.load(Ordering::Relaxed),
         );
         counter(
             &mut output,

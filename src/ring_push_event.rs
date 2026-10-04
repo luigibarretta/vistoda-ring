@@ -4,6 +4,8 @@ use serde::Serialize;
 use tokio::sync::{Mutex, watch};
 
 const EVENT_LIMIT: usize = 128;
+/// Push and history can both report one unlock; HA treats them as one too.
+const UNLOCK_DEDUPE_SECONDS: i64 = 15;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,8 +57,17 @@ impl Default for RingPushEvents {
 }
 
 impl RingPushEvents {
-    pub async fn publish(&self, event_type: RingPushEventKind, occurred_at: i64) {
+    /// Returns false when the same unlock was already published.
+    pub async fn publish(&self, event_type: RingPushEventKind, occurred_at: i64) -> bool {
         let mut state = self.state.lock().await;
+        if event_type == RingPushEventKind::IntercomUnlock
+            && state.events.iter().any(|event| {
+                event.event_type == event_type
+                    && (event.occurred_at - occurred_at).abs() <= UNLOCK_DEDUPE_SECONDS
+            })
+        {
+            return false;
+        }
         let sequence = state.next_sequence;
         state.next_sequence = state.next_sequence.saturating_add(1);
         state.events.push_back(RingPushEvent {
@@ -69,6 +80,7 @@ impl RingPushEvents {
         }
         drop(state);
         self.changed.send_replace(sequence);
+        true
     }
 
     pub async fn wait_after(&self, after: u64, wait: Duration) -> Vec<RingPushEvent> {
@@ -108,10 +120,12 @@ mod tests {
     #[tokio::test]
     async fn cursors_are_monotonic_and_old_events_are_not_replayed() {
         let events = RingPushEvents::default();
-        events.publish(RingPushEventKind::Ding, 10).await;
-        events.publish(RingPushEventKind::IntercomUnlock, 11).await;
+        assert!(events.publish(RingPushEventKind::Ding, 10).await);
+        assert!(events.publish(RingPushEventKind::IntercomUnlock, 11).await);
+        assert!(!events.publish(RingPushEventKind::IntercomUnlock, 20).await);
+        assert!(events.publish(RingPushEventKind::Ding, 11).await);
         let batch = events.wait_after(1, Duration::ZERO).await;
-        assert_eq!(batch.len(), 1);
+        assert_eq!(batch.len(), 2);
         assert_eq!(batch[0].sequence, 2);
         assert_eq!(batch[0].event_type, RingPushEventKind::IntercomUnlock);
     }

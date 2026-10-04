@@ -60,7 +60,9 @@ impl RingPushService {
             return;
         }
         let service = Arc::clone(self);
+        let unlocks = (Arc::clone(self), Arc::clone(&provider));
         tokio::spawn(async move { service.run(provider).await });
+        tokio::spawn(async move { unlocks.0.watch_unlocks(unlocks.1).await });
     }
 
     pub fn connected(&self) -> bool {
@@ -239,6 +241,8 @@ impl RingPushService {
 
 #[path = "ring_push_dispatch.rs"]
 mod dispatch;
+#[path = "ring_unlock_watch.rs"]
+mod unlock_watch;
 
 #[cfg(test)]
 #[path = "ring_push_multidevice_tests.rs"]
