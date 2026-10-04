@@ -1,10 +1,13 @@
-//! Per-message handling: publish recognized events and log a redacted shape
-//! for everything else, so a vendor format change is diagnosable from logs.
+//! Per-device subscriptions and per-message handling: publish recognized
+//! events and log a redacted shape for everything else, so a vendor format
+//! change is diagnosable from logs.
 
 use fcm_push_listener::Error as FcmError;
 
 use super::RingPushService;
 use crate::{
+    error::BridgeError,
+    ring_client::RingClient,
     ring_push_payload::{describe_push, parse_push_event},
     ring_push_support::unix_timestamp,
 };
@@ -17,6 +20,34 @@ pub(super) fn bounded(error: &impl std::fmt::Display) -> String {
 }
 
 impl RingPushService {
+    /// Subscribe every Intercom to ding and unlock pushes; returns their device
+    /// IDs. The unlock-alert gauge is 1 only when every Intercom is subscribed.
+    pub(super) async fn subscribe_devices(
+        &self,
+        client: &RingClient,
+    ) -> Result<Vec<String>, BridgeError> {
+        self.metrics.unlock_alerts(false);
+        let mut devices = Vec::new();
+        let mut all_unlock_alerts = true;
+        for id in self.events.ids()? {
+            let scoped = client.scoped(id);
+            let device = scoped.subscribe_push_events().await?;
+            // Dings keep working without unlock alerts, so a refusal is reported, not fatal.
+            match scoped.subscribe_unlock_alerts(&device).await {
+                Ok(created) => tracing::info!(created, "Ring unlock alerts are subscribed"),
+                Err(error) => {
+                    all_unlock_alerts = false;
+                    tracing::warn!(error = %error, "Ring unlock alerts could not be subscribed");
+                }
+            }
+            drop(scoped);
+            devices.push(device);
+        }
+        self.metrics
+            .unlock_alerts(all_unlock_alerts && !devices.is_empty());
+        Ok(devices)
+    }
+
     pub(super) async fn handle_message(&self, device_ids: &[String], body: &[u8]) {
         let Some(event) = parse_push_event(body) else {
             self.metrics.ignored();

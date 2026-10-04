@@ -152,10 +152,7 @@ impl RingPushService {
         client
             .register_push_token(&state.registration.fcm_token)
             .await?;
-        let mut device_id = Vec::new();
-        for id in self.events.ids()? {
-            device_id.push(client.scoped(id).subscribe_push_events().await?);
-        }
+        let device_id = self.subscribe_devices(&client).await?;
         drop(client);
         self.metrics.registered();
         let checked = state

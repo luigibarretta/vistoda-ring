@@ -1,5 +1,6 @@
-//! Read-only, redacted probe of Ring activity feeds that might record app
-//! unlocks (which the doorbot history and FCM push do not deliver).
+//! Read-only, redacted probe of the Ring feeds that record Intercom unlocks
+//! (the doorbot history does not): the per-device notification event types
+//! and the event history the official app reads with `capabilities=ringtercom`.
 
 use std::collections::BTreeMap;
 
@@ -10,8 +11,6 @@ use serde_json::Value;
 use super::RingClient;
 use crate::error::BridgeError;
 
-/// Host used by the official app for location event and monitoring feeds.
-const APP_API_ROOT: &str = "https://prd-api-us.prd.rings.solutions";
 const PROBE_BODY_LIMIT: usize = 2 * 1024 * 1024;
 const KIND_KEYS: &[&str] = &[
     "kind",
@@ -22,7 +21,13 @@ const KIND_KEYS: &[&str] = &[
     "subtype",
     "event_kind",
     "eventType",
+    "origin",
 ];
+/// Ring's unlock origins (`UnlockOrigin` in the official app); any other
+/// `origin` value could be a person's name and is not reported.
+const ORIGINS: &[&str] = &["user", "delivery", "device", "code"];
+/// Only this feed is a bare list of enum strings worth reporting verbatim.
+const ENUM_LIST_SOURCE: &str = "notification_event_types";
 const TIME_KEYS: &[&str] = &[
     "created_at",
     "timestamp",
@@ -48,6 +53,8 @@ impl RingClient {
             .location_id()
             .ok_or_else(|| BridgeError::Protocol("Ring Intercom has no location".into()))?
             .to_owned();
+        let root = &self.endpoints.api_root;
+        let id = device.id();
         let feeds = [
             (
                 "locations_events",
@@ -55,17 +62,20 @@ impl RingClient {
                 vec![("limit".to_owned(), "20".to_owned())],
             ),
             (
-                "evm_location_history",
-                format!("{APP_API_ROOT}/evm/v2/history/locations/{location}?ringtercom"),
+                "notification_event_types",
+                format!("{root}/notification_settings/v1/doorbots/{id}/event_types"),
                 Vec::new(),
             ),
             (
-                "rs_history",
-                format!("{APP_API_ROOT}/api/v1/rs/history"),
+                "evm_device_history",
+                format!("{root}/evm/v2/history/devices"),
                 vec![
-                    ("accountId".to_owned(), location.clone()),
+                    ("source_ids".to_owned(), id.to_string()),
+                    (
+                        "capabilities".to_owned(),
+                        "offline_event,ringtercom".to_owned(),
+                    ),
                     ("limit".to_owned(), "20".to_owned()),
-                    ("maxLevel".to_owned(), "50".to_owned()),
                 ],
             ),
         ];
@@ -110,11 +120,11 @@ pub fn summarize(source: &'static str, body: &[u8]) -> ProbeSummary {
         Value::Array(items) => vec![format!("array[{}]", items.len())],
         _ => vec!["scalar".to_owned()],
     };
-    walk(&value, &mut summary, 0);
+    walk(&value, &mut summary, 0, source == ENUM_LIST_SOURCE);
     summary
 }
 
-fn walk(value: &Value, summary: &mut ProbeSummary, depth: usize) {
+fn walk(value: &Value, summary: &mut ProbeSummary, depth: usize, enum_list: bool) {
     if depth > 8 {
         return;
     }
@@ -123,6 +133,7 @@ fn walk(value: &Value, summary: &mut ProbeSummary, depth: usize) {
             for (key, item) in map {
                 if KIND_KEYS.contains(&key.as_str())
                     && let Some(text) = item.as_str().filter(|text| safe_label(text))
+                    && (key != "origin" || ORIGINS.contains(&text))
                     && summary.kinds.len() < 64
                 {
                     *summary.kinds.entry(format!("{key}={text}")).or_insert(0) += 1;
@@ -138,13 +149,20 @@ fn walk(value: &Value, summary: &mut ProbeSummary, depth: usize) {
                         summary.newest = Some(stamp);
                     }
                 }
-                walk(item, summary, depth + 1);
+                walk(item, summary, depth + 1, false);
             }
         }
-        Value::Array(items) => items
-            .iter()
-            .take(200)
-            .for_each(|item| walk(item, summary, depth + 1)),
+        Value::Array(items) => {
+            for item in items.iter().take(200) {
+                if enum_list
+                    && let Some(text) = item.as_str().filter(|text| safe_label(text))
+                    && summary.kinds.len() < 64
+                {
+                    *summary.kinds.entry(format!("item={text}")).or_insert(0) += 1;
+                }
+                walk(item, summary, depth + 1, enum_list);
+            }
+        }
         _ => {}
     }
 }
@@ -175,6 +193,20 @@ mod tests {
             !rendered.contains("Mario")
                 && !rendered.contains("Portone")
                 && !rendered.contains("42")
+        );
+        let types = summarize("notification_event_types", br#"["ding","unlock"]"#);
+        assert_eq!(types.kinds.get("item=unlock"), Some(&1));
+        assert_eq!(types.top_level_keys, vec!["array[2]"]);
+        let history = summarize(
+            "evm_device_history",
+            br#"{"items":[{"event_type":"Door.Unlock","origin":"user","tags":["Mario"]},{"origin":"Mario"}]}"#,
+        );
+        assert_eq!(history.kinds.get("event_type=Door.Unlock"), Some(&1));
+        assert_eq!(history.kinds.get("origin=user"), Some(&1));
+        assert!(
+            !serde_json::to_string(&history)
+                .unwrap_or_default()
+                .contains("Mario")
         );
         assert_eq!(
             summarize("x", b"<html>").top_level_keys,

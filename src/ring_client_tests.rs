@@ -220,3 +220,19 @@ async fn native_unlock_and_each_volume_use_bounded_vendor_contracts() {
     }
     assert_eq!(state.control_calls.load(Ordering::SeqCst), 4);
 }
+
+#[tokio::test]
+async fn unlock_alerts_are_subscribed_once_per_device() {
+    let state = Arc::new(MockState::default());
+    let harness = test_client(Arc::clone(&state)).await;
+    for expected in [true, false] {
+        let created = harness
+            .client
+            .subscribe_unlock_alerts("42")
+            .await
+            .unwrap_or_else(|error| panic!("unlock alerts failed: {error}"));
+        assert_eq!(created, expected);
+    }
+    assert_eq!(state.control_calls.load(Ordering::SeqCst), 1);
+    assert!(harness.client.subscribe_unlock_alerts("99").await.is_err());
+}

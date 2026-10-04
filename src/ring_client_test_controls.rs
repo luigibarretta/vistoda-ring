@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::{patch, put},
+    routing::{get, patch, post, put},
 };
 use serde_json::{Value, json};
 
@@ -16,6 +16,33 @@ pub fn routes() -> Router<Arc<MockState>> {
         .route("/commands/v1/devices/{device}/device_rpc", put(unlock))
         .route("/doorbots/42", put(doorbell_volume))
         .route("/devices/v1/devices/42/settings", patch(volume_settings))
+        .route(
+            "/notification_settings/v1/doorbots/42/event_types",
+            get(event_types),
+        )
+        .route(
+            "/notification_settings/v1/doorbots/42/event_types/unlock",
+            post(subscribe_unlock),
+        )
+}
+
+async fn event_types(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Response {
+    if !valid_bearer(&headers) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    if state.control_calls.load(Ordering::SeqCst) == 0 {
+        Json(json!(["ding", "motion"])).into_response()
+    } else {
+        Json(json!(["ding", "motion", "unlock"])).into_response()
+    }
+}
+
+async fn subscribe_unlock(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Response {
+    if !valid_bearer(&headers) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    state.control_calls.fetch_add(1, Ordering::SeqCst);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 pub async fn ticket(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Response {

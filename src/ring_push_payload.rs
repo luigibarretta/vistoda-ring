@@ -4,6 +4,13 @@ use crate::ring_push_event::RingPushEventKind;
 
 const INTERCOM_DING: &str = "com.ring.pn.live-event.intercom";
 const INTERCOM_UNLOCK: &str = "com.ring.push.INTERCOM_UNLOCK_FROM_APP";
+/// v2 categories the official app routes to its access-control unlock
+/// notification (Ring Android 3.113.0); both carry `data.device.id`.
+const UNLOCK_CATEGORIES: &[&str] = &[
+    "com.ring.pn.live-event.unlock",
+    "com.ring.pn.intercom.virtual.unlock",
+    INTERCOM_UNLOCK,
+];
 const PAYLOAD_LIMIT: usize = 128 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -62,12 +69,12 @@ fn normalize_fields(fields: &Map<String, Value>) -> Map<String, Value> {
 
 fn parse_v2(message: &Map<String, Value>) -> Option<ParsedPushEvent> {
     let category = message.get("android_config")?.get("category")?.as_str()?;
-    // Unlocks have been legacy gcmData pushes; also accept the same action as
-    // a v2 category in case Ring moves them to the live-event schema.
-    let event_type = match category {
-        INTERCOM_DING => RingPushEventKind::Ding,
-        INTERCOM_UNLOCK => RingPushEventKind::IntercomUnlock,
-        _ => return None,
+    let event_type = if category == INTERCOM_DING {
+        RingPushEventKind::Ding
+    } else if UNLOCK_CATEGORIES.contains(&category) {
+        RingPushEventKind::IntercomUnlock
+    } else {
+        return None;
     };
     let data = message.get("data")?;
     Some(ParsedPushEvent {
@@ -148,5 +155,24 @@ mod tests {
         );
         assert!(!shape.contains("Mario") && !shape.contains("321"));
         assert_eq!(super::describe_push(b"not json"), "unparsed (8 bytes)");
+    }
+
+    #[test]
+    fn parses_official_app_unlock_categories() {
+        for category in [
+            "com.ring.pn.live-event.unlock",
+            "com.ring.pn.intercom.virtual.unlock",
+        ] {
+            let payload = format!(
+                r#"{{"data":{{"version":"2.0.0","android_config":"{{\"category\":\"{category}\"}}","analytics":"{{\"triggered_at\":1787600000999}}","data":"{{\"device\":{{\"id\":42}},\"location\":{{\"id\":\"loc-1\"}}}}"}}}}"#
+            );
+            let event = parse_push_event(payload.as_bytes())
+                .unwrap_or_else(|| panic!("{category} was not parsed"));
+            assert_eq!(event.event_type, RingPushEventKind::IntercomUnlock);
+            assert_eq!(event.device_id, "42");
+            assert_eq!(event.occurred_at, Some(1_787_600_000));
+        }
+        let other = br#"{"data":{"android_config":"{\"category\":\"com.ring.pn.live-event.motion\"}","data":"{\"device\":{\"id\":42}}"}}"#;
+        assert!(parse_push_event(other).is_none());
     }
 }
