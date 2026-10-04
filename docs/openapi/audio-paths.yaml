@@ -16,6 +16,7 @@ Sessions:
             schema: {$ref: "./schemas.yaml#/AudioSession"}
       "400": {description: Offer violates the audio-only PCMU contract}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: Unknown alias}
       "409": {description: This device already owns an active session}
       "429": {description: Per-device post-session cooldown}

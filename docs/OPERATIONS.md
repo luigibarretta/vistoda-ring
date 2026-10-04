@@ -141,6 +141,39 @@ History unlocks carry Ring's `origin` (`user`, `device`, `code`, `delivery`)
 and, when known, the display name of who unlocked as `actor`; the name is
 returned only on the authenticated event cursor and never logged.
 
+## Push-silence watchdog
+
+The same history poll also reads Intercom dings, which Ring records there as
+well. The exact `event_type` of an Intercom ding in this feed is not yet
+confirmed, so the bridge accepts `ding` alone or as the last segment
+(`Intercom.Ding`, `intercom_ding`, case-insensitive) and items with
+`kind=ding`. `GET /v1/devices/{device}/activity-probe` reports the raw
+`event_type=…` labels plus `classified=ding` and `classified=unlock` counts
+for the history feed, so a live probe after a real ring confirms the match.
+
+A history ding newer than the watcher start is judged 120 seconds after it
+occurred: when no push ding for the same Intercom occurred within 90 seconds
+of it, push missed it and `vistoda_ring_push_missed_dings_total` increments
+(one redacted warning, no IDs or times). History dings are never published as
+events, because a late "someone is ringing" would mislead; queue and cursor
+semantics are unchanged. The device event cursor reports `push_degraded=true`
+while a miss from the last 24 hours has no newer push ding, and
+`last_missed_ding_at` (Unix seconds, omitted when none) for the newest miss
+since the bridge started. Dings older than one hour when first read are
+ignored.
+
+## Revoked Ring session
+
+When Ring rejects the stored refresh token (OAuth HTTP 401, or 400 with
+`invalid_grant`), device routes that contact Ring return `403` with
+`{"error":"reauth_required"}` (error class `provider_auth`); `401` remains
+reserved for the bridge bearer token. Transient OAuth failures (5xx, other
+4xx, transport) keep the previous `500 internal` behaviour. The bridge does
+not present a rejected token again for 15 minutes, the push listener and the
+history poll back off to five minutes, and the state is logged once and
+exposed as the `vistoda_ring_reauth_required` gauge. Re-enrolling the account
+replaces the session and clears it.
+
 ## Local call recording archive
 
 Vistoda records only an active browser communication. Its recorder mixes the
@@ -165,6 +198,7 @@ second delete intentionally returns `204`.
 - unknown alias: `404`;
 - Ring/network outage during enrollment or session start: stable `502`;
 - rejected credentials/code: stable `422`, with no automatic retry;
+- revoked Ring refresh token: `403` `reauth_required` until re-enrollment;
 - expired/consumed challenge: `410`; concurrent flow: `409`; throttling: `429`.
 - invalid container, size or timestamps: stable `400` and no file;
 - browser upload interruption: no manifest is committed.

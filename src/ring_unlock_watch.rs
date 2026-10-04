@@ -1,6 +1,7 @@
 //! Poll the Ring event history for Intercom unlocks. Ring does not push
 //! unlocks made from the official app to third-party clients, but records
 //! them there, so they are published like push events with a short delay.
+//! The same page feeds the push-silence watchdog with history dings.
 
 use std::{
     collections::{HashMap, HashSet, hash_map::Entry},
@@ -10,8 +11,11 @@ use std::{
 
 use super::RingPushService;
 use crate::{
-    error::BridgeError, ring_client::UnlockRecord, ring_provider::RingProvider,
-    ring_push_event::RingPushEventKind, ring_push_payload::ParsedPushEvent,
+    error::BridgeError,
+    ring_client::{HistoryActivity, UnlockRecord},
+    ring_provider::RingProvider,
+    ring_push_event::RingPushEventKind,
+    ring_push_payload::ParsedPushEvent,
     ring_push_support::unix_timestamp,
 };
 
@@ -26,6 +30,7 @@ const LATE_TOLERANCE: i64 = 120;
 /// Reports each history unlock once and never replays history older than
 /// the watcher start, so restarts do not repeat notifications.
 pub(super) struct UnlockCursor {
+    start: i64,
     floor: i64,
     seen: HashSet<String>,
 }
@@ -33,9 +38,15 @@ pub(super) struct UnlockCursor {
 impl UnlockCursor {
     pub(super) fn new(started_at: i64) -> Self {
         Self {
+            start: started_at,
             floor: started_at,
             seen: HashSet::new(),
         }
+    }
+
+    /// History older than this predates the watcher for this Intercom.
+    pub(super) const fn start(&self) -> i64 {
+        self.start
     }
 
     pub(super) fn advance(&mut self, page: Vec<UnlockRecord>) -> Vec<UnlockRecord> {
@@ -54,7 +65,7 @@ impl UnlockCursor {
     }
 }
 
-type UnlockPage = Result<(String, Vec<UnlockRecord>), BridgeError>;
+type UnlockPage = Result<(String, HistoryActivity), BridgeError>;
 
 impl RingPushService {
     pub(super) async fn watch_unlocks(self: Arc<Self>, provider: Arc<RingProvider>) {
@@ -69,6 +80,8 @@ impl RingPushService {
                 .await;
             delay = if read {
                 POLL_INTERVAL
+            } else if self.metrics.reauth_required() {
+                MAX_BACKOFF
             } else {
                 delay.saturating_mul(2).min(MAX_BACKOFF)
             };
@@ -116,7 +129,8 @@ impl RingPushService {
             let cursor = cursors
                 .entry(device.clone())
                 .or_insert_with(|| UnlockCursor::new(floor));
-            for unlock in cursor.advance(page) {
+            self.watch_dings(&devices, &device, cursor.start(), &page.dings, now);
+            for unlock in cursor.advance(page.unlocks) {
                 let event = ParsedPushEvent {
                     device_id: device.clone(),
                     event_type: RingPushEventKind::IntercomUnlock,
@@ -125,6 +139,9 @@ impl RingPushService {
                 self.publish(&devices, event, unlock.detail, "history")
                     .await;
             }
+        }
+        if read {
+            self.reauth_state(false);
         }
         read
     }
@@ -149,7 +166,7 @@ impl RingPushService {
                 }
             }
             if let Some(device) = resolved.get(&id) {
-                let page = client.recent_unlocks(device).await;
+                let page = client.recent_activity(device).await;
                 pages.push(page.map(|page| (device.clone(), page)));
             }
         }
@@ -157,9 +174,14 @@ impl RingPushService {
         Ok(pages)
     }
 
-    /// Logs the Intercom's position, never its Ring ID.
+    /// Logs the Intercom's position, never its Ring ID. A revoked session
+    /// is logged once by `reauth_state`, not on every poll.
     fn unlock_poll_failed(&self, error: &BridgeError, intercom: Option<usize>) {
         self.metrics.unlock_history_failed();
+        if matches!(error, BridgeError::ReauthRequired) {
+            self.reauth_state(true);
+            return;
+        }
         tracing::warn!(error = %error, intercom, "Ring unlock history poll failed");
     }
 }

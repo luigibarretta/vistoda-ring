@@ -129,7 +129,7 @@ async fn discovery_reauthenticates_only_once_after_unauthorized() {
 #[tokio::test]
 async fn rejected_refresh_token_is_not_retried() {
     let state = Arc::new(MockState {
-        reject_oauth: true,
+        oauth_rejection: 401,
         ..MockState::default()
     });
     let harness = test_client(Arc::clone(&state)).await;

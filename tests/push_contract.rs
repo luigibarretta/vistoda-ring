@@ -62,4 +62,6 @@ async fn event_cursor_is_private_and_empty_before_new_pushes() {
     assert_eq!(payload["next_sequence"], 0);
     assert_eq!(payload["generation"].as_str().map(str::len), Some(36));
     assert_eq!(payload["connected"], false);
+    assert_eq!(payload["push_degraded"], false);
+    assert!(payload.get("last_missed_ding_at").is_none());
 }

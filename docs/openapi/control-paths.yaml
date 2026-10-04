@@ -14,12 +14,15 @@ Status:
               properties:
                 device_id: {$ref: "./schemas.yaml#/ExpectedDeviceId"}
                 battery: {type: [integer, "null"], minimum: 0, maximum: 100}
-                online: {type: boolean}
+                online:
+                  type: boolean
+                  description: False only when Ring reports the Intercom connection as offline.
                 doorbell_volume: {type: [integer, "null"], minimum: 0, maximum: 8}
                 mic_volume: {type: [integer, "null"], minimum: 0, maximum: 11}
                 voice_volume: {type: [integer, "null"], minimum: 0, maximum: 11}
                 last_activity: {type: [integer, "null"], minimum: 0}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: Unknown alias}
 Unlock:
   post:
@@ -37,6 +40,7 @@ Unlock:
     responses:
       "204": {description: One Ring unlock command was accepted}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: Unknown alias}
       "502": {description: Ring rejected or could not receive the command}
 Settings:
@@ -63,4 +67,5 @@ Settings:
       "204": {description: Exactly one volume was updated}
       "400": {description: Missing, multiple or out-of-range volume}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: Unknown alias}

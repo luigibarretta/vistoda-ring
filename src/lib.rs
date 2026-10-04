@@ -17,6 +17,7 @@ pub mod ring_client;
 pub mod ring_control;
 mod ring_control_api;
 mod ring_device_runtime;
+pub mod ring_ding_watchdog;
 #[cfg(test)]
 mod ring_discovery_retry_tests;
 pub mod ring_enrollment;
@@ -48,6 +49,8 @@ mod ring_push_queues;
 mod ring_push_store;
 mod ring_push_support;
 mod ring_push_worker;
+#[cfg(test)]
+mod ring_reauth_tests;
 pub mod ring_recording;
 mod ring_recording_api;
 mod ring_recording_manager;

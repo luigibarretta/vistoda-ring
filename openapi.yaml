@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Ring Intercom Bridge
-  version: 0.13.0
+  version: 0.15.0
   description: >-
     Private control-plane, direct WebRTC and bounded native PCMU relay contract
     for Ring Intercom Audio. Vendor credentials never leave the bridge.
@@ -176,6 +176,22 @@ components:
   responses:
     Unauthorized:
       description: Missing or invalid bearer token
+    ReauthRequired:
+      description: >-
+        Ring rejected the stored refresh token (HTTP 401, or 400 with OAuth
+        `invalid_grant`): the dedicated session was revoked or expired. Only a
+        new enrollment recovers; the bridge does not present the rejected
+        token again for 15 minutes. Distinct from 401, which always means the
+        bridge bearer token is missing or invalid. Any device route that
+        contacts Ring can return it.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: {type: string, const: reauth_required}
   parameters:
     DeviceAlias:
       name: device

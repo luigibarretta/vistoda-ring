@@ -21,6 +21,7 @@ History:
               $ref: "./schemas.yaml#/HistoryPage"
       "400": {description: Invalid limit or cursor.}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: Unknown alias.}
       "502": {description: Ring activity history is unavailable.}
 ActivityProbe:
@@ -36,11 +37,14 @@ ActivityProbe:
       notification event types (once per cumulative set of the official
       app's request headers, with a digit-masked `error` text when rejected)
       and the device event history with `capabilities=ringtercom`
-      (`event_type=Door.Unlock`, `origin=user|device|code|delivery`).
+      (`event_type=Door.Unlock`, `origin=user|device|code|delivery`), plus
+      `classified=ding` and `classified=unlock` counts from the bridge's own
+      history classifier.
     security: [{bearerAuth: []}]
     responses:
       "200": {description: One redacted summary per probed feed.}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: Unknown alias.}
       "502": {description: Ring is unavailable.}
 ExpectedDevice:

@@ -45,7 +45,7 @@ async fn cameras(
     let result = client
         .camera_inventory()
         .await
-        .map_err(|_| BridgeError::UpstreamUnavailable)?;
+        .map_err(BridgeError::unavailable_unless_reauth)?;
     drop(client);
     Ok(([(header::CACHE_CONTROL, "no-store")], Json(result)))
 }

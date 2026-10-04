@@ -28,6 +28,9 @@ pub enum BridgeError {
     InvalidCredentials,
     #[error("verification code was rejected")]
     InvalidOtp,
+    /// Ring revoked the stored refresh token; only a new enrollment recovers.
+    #[error("Ring session must be enrolled again")]
+    ReauthRequired,
     #[error("another enrollment is active")]
     EnrollmentBusy,
     #[error("enrollment expired or was already consumed")]
@@ -55,6 +58,16 @@ pub enum BridgeError {
     Json(#[from] serde_json::Error),
 }
 
+impl BridgeError {
+    /// Hides provider detail behind a stable 502 but keeps the re-enrollment signal.
+    pub(crate) fn unavailable_unless_reauth(self) -> Self {
+        match self {
+            Self::ReauthRequired => self,
+            _ => Self::UpstreamUnavailable,
+        }
+    }
+}
+
 impl IntoResponse for BridgeError {
     fn into_response(self) -> Response {
         let (status, context) = match &self {
@@ -74,6 +87,10 @@ impl IntoResponse for BridgeError {
                 "invalid_otp",
                 "provider_auth",
             ),
+            // 401 stays reserved for the bridge bearer token.
+            Self::ReauthRequired => {
+                response(StatusCode::FORBIDDEN, "reauth_required", "provider_auth")
+            }
             Self::EnrollmentBusy => {
                 response(StatusCode::CONFLICT, "enrollment_busy", "concurrency")
             }
@@ -131,4 +148,52 @@ const fn response(
     class: &'static str,
 ) -> (StatusCode, HttpErrorContext) {
     (status, HttpErrorContext { code, class })
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{http::StatusCode, response::IntoResponse};
+
+    use super::{BridgeError, HttpErrorContext};
+
+    fn mapped(error: BridgeError) -> (StatusCode, &'static str, &'static str) {
+        let response = error.into_response();
+        let context = response
+            .extensions()
+            .get::<HttpErrorContext>()
+            .copied()
+            .unwrap_or_else(|| panic!("error context is missing"));
+        (response.status(), context.code, context.class)
+    }
+
+    #[test]
+    fn revoked_session_is_forbidden_and_distinct_from_bridge_auth() {
+        assert_eq!(
+            mapped(BridgeError::ReauthRequired),
+            (StatusCode::FORBIDDEN, "reauth_required", "provider_auth")
+        );
+        assert_eq!(
+            mapped(BridgeError::Unauthorized),
+            (StatusCode::UNAUTHORIZED, "unauthorized", "auth")
+        );
+        assert_eq!(
+            mapped(BridgeError::VendorRejected {
+                operation: "OAuth refresh",
+                status: 500,
+            }),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal",
+                "provider_response"
+            )
+        );
+        assert!(matches!(
+            BridgeError::ReauthRequired.unavailable_unless_reauth(),
+            BridgeError::ReauthRequired
+        ));
+        assert!(matches!(
+            BridgeError::Protocol("x".into()).unavailable_unless_reauth(),
+            BridgeError::UpstreamUnavailable
+        ));
+    }
 }

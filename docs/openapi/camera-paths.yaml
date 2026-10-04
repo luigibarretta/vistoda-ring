@@ -38,6 +38,7 @@ Cameras:
                             items:
                               enum: [live_video_receive, live_audio_receive, live_audio_transmit]
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "502": {description: Ring enrollment or discovery unavailable}
 Sessions:
   post:
@@ -69,6 +70,7 @@ Sessions:
             schema: {$ref: "./schemas.yaml#/AudioSession"}
       "400": {description: Invalid SDP or missing/mismatched physical camera ID}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "404": {description: ID is not an enrolled native camera}
       "409": {description: Camera already has an active session}
       "429": {description: Ten-second per-camera cooldown}

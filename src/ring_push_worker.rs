@@ -112,6 +112,11 @@ impl RingPushService {
                 Ok(false) => {
                     tracing::info!("Ring push device subscription changed; reconnecting");
                 }
+                Err(PushError::Provider(BridgeError::ReauthRequired)) => {
+                    // Only a re-enrollment recovers; retry rarely and log once.
+                    self.reauth_state(true);
+                    delay = MAX_RETRY;
+                }
                 Err(error) => tracing::warn!(error_class = %error, "Ring push listener failed"),
             }
             let was_connected = self.metrics.connected();
@@ -154,6 +159,7 @@ impl RingPushService {
         client
             .register_push_token(&state.registration.fcm_token)
             .await?;
+        self.reauth_state(false);
         let device_id = self.subscribe_devices(&client).await?;
         drop(client);
         self.metrics.registered();
@@ -217,30 +223,14 @@ impl RingPushService {
         }
         Ok(true)
     }
-
-    async fn load(&self) -> Result<Option<RingPushState>, PushError> {
-        let store = Arc::clone(&self.store);
-        tokio::task::spawn_blocking(move || store.load())
-            .await
-            .map_err(|error| PushError::Fcm("state load", dispatch::bounded(&error)))?
-            .map_err(Into::into)
-    }
-
-    async fn persist(&self, state: &RingPushState) -> Result<(), PushError> {
-        let store = Arc::clone(&self.store);
-        let state = RingPushState {
-            registration: state.registration.clone(),
-            persistent_ids: state.persistent_ids.clone(),
-        };
-        tokio::task::spawn_blocking(move || store.persist(&state))
-            .await
-            .map_err(|error| PushError::Fcm("state persistence", dispatch::bounded(&error)))?
-            .map_err(Into::into)
-    }
 }
 
+#[path = "ring_ding_watch.rs"]
+mod ding_watch;
 #[path = "ring_push_dispatch.rs"]
 mod dispatch;
+#[path = "ring_push_persist.rs"]
+mod persist;
 #[path = "ring_unlock_watch.rs"]
 mod unlock_watch;
 

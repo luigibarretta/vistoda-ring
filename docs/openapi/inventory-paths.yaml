@@ -42,5 +42,6 @@ Intercoms:
                       name: {type: string, minLength: 1, maxLength: 128}
                       location_name: {type: [string, "null"], maxLength: 128}
       "401": {$ref: "../../openapi.yaml#/components/responses/Unauthorized"}
+      "403": {$ref: "../../openapi.yaml#/components/responses/ReauthRequired"}
       "502":
         description: Account enrollment or Ring device discovery is unavailable

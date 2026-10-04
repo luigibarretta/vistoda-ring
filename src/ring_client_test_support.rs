@@ -42,7 +42,7 @@ pub struct MockState {
     pub ticket_calls: AtomicUsize,
     pub first_discovery_unauthorized: bool,
     pub unavailable_discoveries: AtomicUsize,
-    pub reject_oauth: bool,
+    pub oauth_rejection: u16,
     pub rate_limit_discovery: bool,
     pub control_calls: AtomicUsize,
     pub additional_intercoms: usize,
@@ -116,8 +116,8 @@ async fn oauth(
 ) -> Response {
     let call = state.oauth_calls.fetch_add(1, Ordering::SeqCst);
     let expected_refresh = if call == 0 { REFRESH_A } else { REFRESH_B };
-    if state.reject_oauth {
-        return StatusCode::UNAUTHORIZED.into_response();
+    if let Ok(status) = StatusCode::from_u16(state.oauth_rejection) {
+        return (status, Json(json!({"error": "invalid_grant"}))).into_response();
     }
     if invalid_oauth(&headers, &body, expected_refresh) {
         return StatusCode::BAD_REQUEST.into_response();

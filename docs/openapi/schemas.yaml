@@ -180,7 +180,7 @@ PushEvent:
 PushEventBatch:
   type: object
   additionalProperties: false
-  required: [device_id, cursor_reset, events, next_sequence, generation, connected]
+  required: [device_id, cursor_reset, events, next_sequence, generation, connected, push_degraded]
   properties:
     device_id: {$ref: "#/ExpectedDeviceId"}
     cursor_reset: {type: boolean}
@@ -192,6 +192,18 @@ PushEventBatch:
     next_sequence: {type: integer, format: int64, minimum: 0}
     generation: {type: string, format: uuid}
     connected: {type: boolean}
+    push_degraded:
+      type: boolean
+      description: >-
+        True when, in the last 24 hours, Ring's event history recorded a ding
+        that push did not deliver within 90 seconds (judged after a 120-second
+        grace period) and no push ding has arrived since. Missed dings are
+        never returned as events.
+    last_missed_ding_at:
+      description: Unix time of the newest missed ding since the bridge started; omitted when none.
+      type: integer
+      format: int64
+      minimum: 0
 ExpectedDeviceId:
   type: string
   pattern: "^[1-9][0-9]{0,19}$"

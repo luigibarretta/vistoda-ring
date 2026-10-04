@@ -26,7 +26,7 @@ async fn intercoms(
     let inventory = runtime
         .refresh_intercoms()
         .await
-        .map_err(|_| BridgeError::UpstreamUnavailable)?;
+        .map_err(BridgeError::unavailable_unless_reauth)?;
     Ok(([(header::CACHE_CONTROL, "no-store")], Json(inventory)))
 }
 

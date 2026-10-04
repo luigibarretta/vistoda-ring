@@ -8,7 +8,9 @@ use crate::ring_push_event::RingPushEventKind;
 #[derive(Default)]
 pub struct RingPushMetrics {
     connected: AtomicBool,
+    reauth_required: AtomicBool,
     unlock_history_errors: AtomicU64,
+    missed_dings: AtomicU64,
     registrations: AtomicU64,
     reconnects: AtomicU64,
     errors: AtomicU64,
@@ -26,6 +28,19 @@ impl RingPushMetrics {
 
     pub fn connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
+    }
+
+    /// Returns whether the state changed, so callers log it once.
+    pub fn set_reauth_required(&self, value: bool) -> bool {
+        self.reauth_required.swap(value, Ordering::Relaxed) != value
+    }
+
+    pub fn reauth_required(&self) -> bool {
+        self.reauth_required.load(Ordering::Relaxed)
+    }
+
+    pub fn missed_dings(&self, count: u64) {
+        self.missed_dings.fetch_add(count, Ordering::Relaxed);
     }
 
     pub fn unlock_history_failed(&self) {
@@ -68,6 +83,11 @@ impl RingPushMetrics {
             "vistoda_ring_push_connected",
             u64::from(self.connected()),
         );
+        gauge(
+            &mut output,
+            "vistoda_ring_reauth_required",
+            u64::from(self.reauth_required()),
+        );
         counter(
             &mut output,
             "vistoda_ring_push_registrations_total",
@@ -103,6 +123,11 @@ impl RingPushMetrics {
             &mut output,
             "vistoda_ring_unlock_history_errors_total",
             self.unlock_history_errors.load(Ordering::Relaxed),
+        );
+        counter(
+            &mut output,
+            "vistoda_ring_push_missed_dings_total",
+            self.missed_dings.load(Ordering::Relaxed),
         );
         counter(
             &mut output,

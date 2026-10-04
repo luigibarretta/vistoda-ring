@@ -87,7 +87,7 @@ impl RingClient {
                 )
                 .await;
             summaries.push(match result {
-                Ok(body) => summarize(source, &body),
+                Ok(body) => classified(summarize(source, &body), &body),
                 Err(BridgeError::VendorRejected { status, .. }) => ProbeSummary {
                     source,
                     status: Some(status),
@@ -99,6 +99,20 @@ impl RingClient {
         summaries.extend(self.notification_settings_probe(id).await?);
         Ok(summaries)
     }
+}
+
+/// Adds what the bridge's own history classifier recognizes, so a live probe
+/// confirms which `event_type` Ring uses for Intercom dings.
+fn classified(mut summary: ProbeSummary, body: &[u8]) -> ProbeSummary {
+    if summary.source == "evm_device_history"
+        && let Ok(activity) = super::unlock_history::parse_activity(body)
+    {
+        let count = |items: usize| u32::try_from(items).unwrap_or(u32::MAX);
+        let kinds = &mut summary.kinds;
+        kinds.insert("classified=ding".into(), count(activity.dings.len()));
+        kinds.insert("classified=unlock".into(), count(activity.unlocks.len()));
+    }
+    summary
 }
 
 pub fn summarize(source: &'static str, body: &[u8]) -> ProbeSummary {
@@ -179,7 +193,7 @@ fn safe_label(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::summarize;
+    use super::{classified, summarize};
 
     #[test]
     fn summarizes_kinds_and_newest_time_without_identifiers() {
@@ -203,6 +217,10 @@ mod tests {
             br#"{"items":[{"event_type":"Door.Unlock","origin":"user","tags":["Mario"]},{"origin":"Mario"}]}"#,
         );
         assert_eq!(history.kinds.get("event_type=Door.Unlock"), Some(&1));
+        let body = br#"{"items":[{"event_id":"e","event_type":"Intercom.Ding","start_time":"2026-10-04T08:30:00Z"}]}"#;
+        let counted = classified(summarize("evm_device_history", body), body);
+        assert_eq!(counted.kinds.get("classified=ding"), Some(&1));
+        assert_eq!(counted.kinds.get("classified=unlock"), Some(&0));
         assert_eq!(history.kinds.get("origin=user"), Some(&1));
         assert!(
             !serde_json::to_string(&history)

@@ -3,6 +3,8 @@ use std::{collections::VecDeque, time::Duration};
 use serde::Serialize;
 use tokio::sync::{Mutex, watch};
 
+use crate::ring_ding_watchdog::{DingHealth, DingWatchdog, HistoryDing};
+
 const EVENT_LIMIT: usize = 128;
 /// Push and history can both report one unlock; HA treats them as one too.
 const UNLOCK_DEDUPE_SECONDS: i64 = 15;
@@ -42,6 +44,11 @@ pub struct RingPushEventBatch {
     pub next_sequence: u64,
     pub generation: String,
     pub connected: bool,
+    /// A ding from the last day reached Ring's history but not push, and no
+    /// push ding has arrived since.
+    pub push_degraded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_missed_ding_at: Option<i64>,
 }
 
 struct EventState {
@@ -53,6 +60,7 @@ pub struct RingPushEvents {
     state: Mutex<EventState>,
     changed: watch::Sender<u64>,
     generation: String,
+    watchdog: std::sync::Mutex<DingWatchdog>,
 }
 
 impl Default for RingPushEvents {
@@ -65,6 +73,7 @@ impl Default for RingPushEvents {
             }),
             changed,
             generation: uuid::Uuid::new_v4().to_string(),
+            watchdog: std::sync::Mutex::default(),
         }
     }
 }
@@ -91,6 +100,10 @@ impl RingPushEvents {
         {
             return false;
         }
+        if event_type == RingPushEventKind::Ding {
+            // Dings are published from push only, never from history.
+            self.watchdog().record_push(occurred_at);
+        }
         let sequence = state.next_sequence;
         state.next_sequence = state.next_sequence.saturating_add(1);
         state.events.push_back(RingPushEvent {
@@ -116,6 +129,26 @@ impl RingPushEvents {
         self.events_after(after).await
     }
 
+    /// Judges history dings against the push dings seen; returns the misses.
+    pub fn watch_history_dings<'a>(
+        &self,
+        dings: impl IntoIterator<Item = &'a HistoryDing>,
+        now: i64,
+    ) -> u64 {
+        self.watchdog().observe(dings, now)
+    }
+
+    pub fn ding_health(&self, now: i64) -> DingHealth {
+        self.watchdog().health(now)
+    }
+
+    fn watchdog(&self) -> std::sync::MutexGuard<'_, DingWatchdog> {
+        // The watchdog holds plain values; a panicked holder cannot break them.
+        self.watchdog
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     pub async fn latest_sequence(&self) -> u64 {
         self.state.lock().await.next_sequence.saturating_sub(1)
     }
@@ -138,8 +171,41 @@ impl RingPushEvents {
 
 #[cfg(test)]
 mod tests {
-    use super::{RingPushEventKind, RingPushEvents, UnlockDetail};
+    use super::{RingPushEventBatch, RingPushEventKind, RingPushEvents, UnlockDetail};
+    use crate::ring_ding_watchdog::HistoryDing;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn push_health_fields_follow_published_dings_and_omit_unknown_misses() {
+        let events = RingPushEvents::default();
+        let ding = HistoryDing {
+            event_id: "h1".into(),
+            occurred_at: 1_000,
+        };
+        assert_eq!(events.watch_history_dings([&ding], 1_200), 1);
+        let health = events.ding_health(1_200);
+        assert!(health.push_degraded);
+        assert!(events.publish(RingPushEventKind::Ding, 1_300).await);
+        assert!(!events.ding_health(1_300).push_degraded);
+        let mut batch = RingPushEventBatch {
+            device_id: "42".into(),
+            cursor_reset: false,
+            events: Vec::new(),
+            next_sequence: 0,
+            generation: events.generation().to_owned(),
+            connected: true,
+            push_degraded: health.push_degraded,
+            last_missed_ding_at: health.last_missed_ding_at,
+        };
+        let shown = serde_json::to_value(&batch).unwrap_or_default();
+        assert_eq!(shown["push_degraded"], true);
+        assert_eq!(shown["last_missed_ding_at"], 1_000);
+        batch.push_degraded = false;
+        batch.last_missed_ding_at = None;
+        let shown = serde_json::to_value(&batch).unwrap_or_default();
+        assert_eq!(shown["push_degraded"], false);
+        assert!(shown.get("last_missed_ding_at").is_none());
+    }
 
     #[tokio::test]
     async fn cursors_are_monotonic_and_old_events_are_not_replayed() {

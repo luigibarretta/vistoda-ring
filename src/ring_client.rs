@@ -8,7 +8,7 @@ use crate::{
         STREAM_TICKET_ENDPOINT, USER_AGENT,
     },
     ring_session::{RingSession, RingSessionStore},
-    ring_wire::{OAuthResponse, parse_devices, parse_oauth},
+    ring_wire::parse_devices,
 };
 use reqwest::{Client, StatusCode, redirect::Policy};
 use serde_json::Value;
@@ -19,7 +19,6 @@ use zeroize::Zeroizing;
 const AUTH_BODY_LIMIT: usize = 64 * 1024;
 const SESSION_BODY_LIMIT: usize = 64 * 1024;
 const DISCOVERY_BODY_LIMIT: usize = 2 * 1024 * 1024;
-const EXPIRY_MARGIN: Duration = Duration::from_mins(1);
 const SESSION_LIFETIME: Duration = Duration::from_hours(12);
 #[derive(Clone)]
 struct Endpoints {
@@ -51,6 +50,8 @@ struct ClientState {
     access: Option<AccessToken>,
     registered_until: Option<Instant>,
     rotation_pending: bool,
+    /// Set while a revoked refresh token is reported without contacting Ring.
+    reauth_until: Option<Instant>,
 }
 #[derive(Clone)]
 pub struct RingClient {
@@ -88,6 +89,7 @@ impl RingClient {
                 access: None,
                 registered_until: None,
                 rotation_pending: false,
+                reauth_until: None,
             })),
             selected_device_id: None,
             lifecycle_guard: None,
@@ -120,54 +122,6 @@ impl RingClient {
         Err(BridgeError::Protocol(
             "discovery retry was exhausted".into(),
         ))
-    }
-    async fn ensure_authenticated(&self, state: &mut ClientState) -> Result<(), BridgeError> {
-        if state.rotation_pending {
-            self.store.persist(&state.session)?;
-            state.rotation_pending = false;
-        }
-        if state
-            .access
-            .as_ref()
-            .is_some_and(|token| token.valid_until > Instant::now() + EXPIRY_MARGIN)
-        {
-            return Ok(());
-        }
-        self.store.persist(&state.session)?;
-        let protocol = ProtocolResearch::new(&state.session);
-        let response = self
-            .http
-            .post(&self.endpoints.oauth)
-            .header("2fa-support", "true")
-            .header("2fa-code", "")
-            .header("hardware_id", protocol.hardware_id().to_string())
-            .header(reqwest::header::USER_AGENT, USER_AGENT)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(protocol.refresh_body()?.to_vec())
-            .send()
-            .await
-            .map_err(|error| BridgeError::Transport("OAuth refresh", error))?;
-        let body = checked_body(response, "OAuth refresh", AUTH_BODY_LIMIT).await?;
-        self.accept_oauth(state, parse_oauth(&body)?)
-    }
-    fn accept_oauth(
-        &self,
-        state: &mut ClientState,
-        response: OAuthResponse,
-    ) -> Result<(), BridgeError> {
-        let valid_until = Instant::now() + Duration::from_secs(response.expires_in);
-        state.access = Some(AccessToken {
-            value: response.access_token,
-            valid_until,
-        });
-        state
-            .session
-            .replace_refresh_token(response.refresh_token)?;
-        state.rotation_pending = true;
-        self.store.persist(&state.session)?;
-        state.rotation_pending = false;
-        Ok(())
     }
     async fn ensure_registered(&self, state: &mut ClientState) -> Result<(), BridgeError> {
         if state
@@ -234,13 +188,15 @@ mod cameras;
 mod controls;
 #[path = "ring_history_provider.rs"]
 mod history;
+#[path = "ring_oauth_refresh.rs"]
+mod oauth_refresh;
 #[path = "ring_push_provider.rs"]
 mod push;
 #[path = "ring_settings_probe.rs"]
 mod settings_probe;
 #[path = "ring_unlock_history.rs"]
 mod unlock_history;
-pub use unlock_history::UnlockRecord;
+pub use unlock_history::{HistoryActivity, UnlockRecord};
 #[cfg(test)]
 #[path = "ring_client_tests.rs"]
 pub(crate) mod tests;

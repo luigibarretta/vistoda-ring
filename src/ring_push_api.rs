@@ -72,6 +72,7 @@ async fn events(
     } else {
         queue.latest_sequence().await
     };
+    let health = queue.ding_health(crate::ring_push_support::unix_timestamp());
     Ok(Json(RingPushEventBatch {
         device_id: device_id.to_string(),
         cursor_reset,
@@ -79,5 +80,7 @@ async fn events(
         next_sequence,
         generation: queue.generation().to_owned(),
         connected: runtime.push.connected(),
+        push_degraded: health.push_degraded,
+        last_missed_ding_at: health.last_missed_ding_at,
     }))
 }
