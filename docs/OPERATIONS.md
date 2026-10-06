@@ -182,11 +182,15 @@ confirmed, so the bridge accepts `ding` alone or as the last segment
 for the history feed, so a live probe after a real ring confirms the match.
 
 A history ding newer than the watcher start is judged 120 seconds after it
-occurred: when no push ding for the same Intercom occurred within 90 seconds
-of it, push missed it and `vistoda_ring_push_missed_dings_total` increments
-(one redacted warning, no IDs or times). History dings are never published as
-events, because a late "someone is ringing" would mislead; queue and cursor
-semantics are unchanged. The device event cursor reports `push_degraded=true`
+occurred while push has proven itself (a push ding was seen and none was
+missed after it); otherwise, including right after a start, it is judged 15
+seconds after it was first read, because waiting longer for a silent push only
+delays the report and a late push still matches it first.
+When no push ding for the same Intercom occurred within 90 seconds of it, push
+missed it and `vistoda_ring_push_missed_dings_total` increments (one redacted
+warning, no IDs or times). History dings are never published as live call
+events, because a late "someone is ringing" would mislead; the miss time is
+reported instead, so Home Assistant can say when someone rang. The device event cursor reports `push_degraded=true`
 while a miss from the last 24 hours has no newer push ding, and
 `last_missed_ding_at` (Unix seconds, omitted when none) for the newest miss
 since the bridge started. Dings older than one hour when first read are

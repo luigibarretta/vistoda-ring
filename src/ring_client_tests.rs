@@ -2,6 +2,8 @@
 #![allow(clippy::significant_drop_tightening)]
 use std::sync::{Arc, atomic::Ordering};
 
+#[path = "ring_client_push_tests.rs"]
+mod push_tests;
 #[path = "ring_client_test_support.rs"]
 pub mod support;
 

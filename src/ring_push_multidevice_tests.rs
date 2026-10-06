@@ -37,6 +37,8 @@ async fn missed_history_dings_degrade_only_their_intercom_and_are_never_publishe
     };
     // A ding before the watcher start is not judged.
     service.watch_dings(&devices, "43", 1_000, &[ding("old", 990)], 1_500);
+    // First read, then judged once the short grace has passed.
+    service.watch_dings(&devices, "43", 1_000, &[ding("new", 1_100)], 1_480);
     service.watch_dings(&devices, "43", 1_000, &[ding("new", 1_100)], 1_500);
     assert!(
         service

@@ -182,6 +182,8 @@ mod tests {
             event_id: "h1".into(),
             occurred_at: 1_000,
         };
+        // First read, then judged once the short grace has passed.
+        assert_eq!(events.watch_history_dings([&ding], 1_185), 0);
         assert_eq!(events.watch_history_dings([&ding], 1_200), 1);
         let health = events.ding_health(1_200);
         assert!(health.push_degraded);

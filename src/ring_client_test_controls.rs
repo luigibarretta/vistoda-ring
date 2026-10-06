@@ -16,6 +16,32 @@ pub fn routes() -> Router<Arc<MockState>> {
         .route("/commands/v1/devices/{device}/device_rpc", put(unlock))
         .route("/doorbots/42", put(doorbell_volume))
         .route("/devices/v1/devices/42/settings", patch(volume_settings))
+        .route("/device", patch(push_device))
+}
+
+/// Accepts only the official-app device record; counts in `control_calls`.
+async fn push_device(
+    State(state): State<Arc<MockState>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    let device = &body["device"];
+    let version = &device["metadata"]["pn_dict_version"];
+    // Token "l…" simulates Ring refusing the app-format record.
+    if device["push_notification_token"] == "l".repeat(40).as_str() {
+        if version != "2.0.0" {
+            return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+        }
+    } else if !valid_bearer(&headers)
+        || headers.get("App_Brand").is_none_or(|brand| brand != "ring")
+        || device["app_brand"] != "ring"
+        || device["push_notification_token"] != "t".repeat(40).as_str()
+        || version != "2.4.0"
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    state.control_calls.fetch_add(1, Ordering::SeqCst);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 pub async fn ticket(State(state): State<Arc<MockState>>, headers: HeaderMap) -> Response {

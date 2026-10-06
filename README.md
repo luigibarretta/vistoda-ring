@@ -77,6 +77,10 @@ Native push needs outbound HTTPS plus TCP/5228 to `mtalk.google.com`. Its
 registration and acknowledged persistent IDs are atomically stored as a 0600
 file. `/healthz` reports only whether the push socket is connected; Prometheus
 exports aggregate reconnect/error/event counters without payload or device IDs.
+The token is registered with `PATCH clients_api/device` in the official
+Android app's record format (payload dictionary 2.4.0, app brand, hardware ID,
+notification status, app identity headers) and re-sent after every Ring
+session registration, which otherwise drops it.
 
 Every response carries a server-generated `x-request-id`. Failed requests log
 only that ID, method, normalized route, status, latency and a bounded error

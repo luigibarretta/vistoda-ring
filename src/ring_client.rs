@@ -50,6 +50,8 @@ struct ClientState {
     access: Option<AccessToken>,
     registered_until: Option<Instant>,
     rotation_pending: bool,
+    /// Last FCM token registered, re-sent after every session registration.
+    push_token: Option<Zeroizing<String>>,
     /// Set while a revoked refresh token is reported without contacting Ring.
     reauth_until: Option<Instant>,
 }
@@ -89,6 +91,7 @@ impl RingClient {
                 access: None,
                 registered_until: None,
                 rotation_pending: false,
+                push_token: None,
                 reauth_until: None,
             })),
             selected_device_id: None,
@@ -146,6 +149,10 @@ impl RingClient {
             .map_err(|error| BridgeError::Transport("session registration", error))?;
         checked_body(response, "session registration", SESSION_BODY_LIMIT).await?;
         state.registered_until = Some(Instant::now() + SESSION_LIFETIME);
+        // A new session record drops the push token; restore it at once.
+        if let Err(error) = self.patch_push_device(state).await {
+            tracing::warn!(%error, "Ring push token was not restored after session registration");
+        }
         Ok(())
     }
     async fn discovery_request(
