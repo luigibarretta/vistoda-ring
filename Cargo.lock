@@ -2360,7 +2360,6 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "tokio",
- "tokio-stream",
  "tokio-tungstenite 0.30.0",
  "tower",
  "tracing",
