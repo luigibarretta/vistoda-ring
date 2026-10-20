@@ -1,6 +1,6 @@
 [package]
 name = "fcm-push-listener-ring"
-version = "4.0.3-vistoda.2"
+version = "4.0.3-vistoda.3"
 edition = "2021"
 description = "Vistoda-maintained FCM listener for Ring Android registration"
 license = "MIT"
@@ -24,7 +24,7 @@ reqwest = { version = "0.13.4", default-features = false, features = ["form", "j
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 serde = "1.0"
 serde_with = { version = "3.12", default-features = false, features = ["macros"] }
-tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread", "net"] }
+tokio = { version = "1", default-features = false, features = ["macros", "rt-multi-thread", "net", "time"] }
 tokio-rustls = "0.26.2"
 tokio-stream = "0.1"
 uuid = { version = "1.15", features = ["v4", "fast-rng", "macro-diagnostics"] }

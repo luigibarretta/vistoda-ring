@@ -1,4 +1,9 @@
-use std::sync::{Arc, atomic::Ordering};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::{
+    fs,
+    sync::{Arc, atomic::Ordering},
+};
 
 use axum::{
     Json, Router,
@@ -25,8 +30,13 @@ async fn push_device(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
+    state.push_attempts.fetch_add(1, Ordering::SeqCst);
     let device = &body["device"];
     let version = &device["metadata"]["pn_dict_version"];
+    // Token "r…" simulates Ring rate limiting the request.
+    if device["push_notification_token"] == "r".repeat(40).as_str() {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
     // Token "l…" simulates Ring refusing the app-format record.
     if device["push_notification_token"] == "l".repeat(40).as_str() {
         if version != "2.0.0" {
@@ -128,4 +138,21 @@ async fn volume_settings(
     }
     state.control_calls.fetch_add(1, Ordering::SeqCst);
     Json(json!({})).into_response()
+}
+
+pub fn assert_session_token(path: &std::path::Path, expected: &str) {
+    let value: Value = serde_json::from_slice(
+        &fs::read(path).unwrap_or_else(|error| panic!("session read failed: {error}")),
+    )
+    .unwrap_or_else(|error| panic!("session JSON failed: {error}"));
+    assert_eq!(value["refresh_token"], expected);
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(path)
+            .unwrap_or_else(|error| panic!("session metadata failed: {error}"))
+            .permissions()
+            .mode()
+            & 0o077,
+        0
+    );
 }

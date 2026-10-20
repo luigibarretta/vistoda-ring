@@ -10,6 +10,32 @@ pub struct Registration {
     pub keys: fcm::WebPushKeys,
 }
 
+/// GCM often answers a fresh check-in with a transient `PHONE_REGISTRATION_ERROR`;
+/// retry on the same check-in instead of creating a new device every time.
+const TOKEN_ATTEMPTS: u32 = 5;
+
+async fn request_token_with_retry(
+    http: &reqwest::Client,
+    session: &gcm::Session,
+    app_id: &str,
+) -> Result<String, Error> {
+    use rand::Rng;
+
+    let mut attempt = 1;
+    loop {
+        match session.request_token(http, app_id).await {
+            Ok(token) => return Ok(token),
+            Err(error) if attempt < TOKEN_ATTEMPTS => {
+                log::debug!("GCM registration attempt {attempt} failed: {error}");
+                let pause = rand::rng().random_range(1_000..=2_000);
+                tokio::time::sleep(std::time::Duration::from_millis(pause)).await;
+                attempt += 1;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 pub async fn register(
     http: &reqwest::Client,
     firebase_app_id: &str,
@@ -24,7 +50,7 @@ pub async fn register(
     let gcm_app_id = format!("wp:receiver.push.com#{id}");
 
     log::debug!("Registering to GCM");
-    let gcm_token = gcm_session.request_token(&gcm_app_id).await?;
+    let gcm_token = request_token_with_retry(http, &gcm_session, &gcm_app_id).await?;
 
     log::debug!("Getting Firebase installation token");
     let firebase_installation_token = firebase::InstallationAuthToken::request(

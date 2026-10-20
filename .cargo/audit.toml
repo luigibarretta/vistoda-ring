@@ -1,0 +1,9 @@
+# Reviewed exceptions for `cargo audit --deny warnings`; keep each one justified.
+[advisories]
+ignore = [
+    # webpki-roots 0.26.11 is a semver-trick shim that re-exports webpki-roots 1.x;
+    # Cargo.lock resolves it to the fixed 1.0.10, so no distrusted root is bundled.
+    # tokio-tungstenite 0.30 still requires the 0.26 name. Remove this entry once
+    # it depends on webpki-roots 1 directly.
+    "RUSTSEC-2026-0381",
+]

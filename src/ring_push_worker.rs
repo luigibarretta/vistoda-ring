@@ -4,29 +4,17 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
 };
 
-use fcm_push_listener::{Message, MessageStream, new_heartbeat_ack, register};
-use futures_util::StreamExt;
 use thiserror::Error;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Instant};
 
 use crate::{
-    error::BridgeError,
-    ring_provider::RingProvider,
-    ring_push_event::RingPushEvents,
-    ring_push_metrics::RingPushMetrics,
-    ring_push_store::{RingPushState, RingPushStore},
+    error::BridgeError, ring_provider::RingProvider, ring_push_event::RingPushEvents,
+    ring_push_metrics::RingPushMetrics, ring_push_store::RingPushStore,
     ring_push_support::fcm_client,
 };
-
-const FIREBASE_APP_ID: &str = "1:876313859327:android:e10ec6ddb3c81f39";
-const FIREBASE_PROJECT_ID: &str = "ring-17770";
-const FIREBASE_API_KEY: &str = "AIzaSyCv-hdFBmmdBBJadNy-TFwB-xN_H5m3Bk8";
-const MIN_RETRY: Duration = Duration::from_secs(5);
-const MAX_RETRY: Duration = Duration::from_mins(5);
+use policy::{Attempt, Ending, ReconnectPolicy};
 
 #[derive(Debug, Error)]
 pub enum PushError {
@@ -34,6 +22,19 @@ pub enum PushError {
     Provider(#[from] BridgeError),
     #[error("Ring FCM {0} failed: {1}")]
     Fcm(&'static str, String),
+    /// Google answered but refused the stored device credentials.
+    #[error("Ring FCM {0} was rejected: {1}")]
+    Rejected(&'static str, String),
+}
+
+impl PushError {
+    /// Bounded metric label for the failing stage.
+    const fn stage(&self) -> &'static str {
+        match self {
+            Self::Provider(_) => "provider",
+            Self::Fcm(stage, _) | Self::Rejected(stage, _) => stage,
+        }
+    }
 }
 
 pub struct RingPushService {
@@ -69,6 +70,11 @@ impl RingPushService {
         self.metrics.connected()
     }
 
+    /// The stored registration was unreadable and replaced since start.
+    pub fn state_reset(&self) -> bool {
+        self.metrics.state_was_reset()
+    }
+
     pub fn reload(&self) {
         self.reload
             .send_modify(|value| *value = value.wrapping_add(1));
@@ -93,135 +99,105 @@ impl RingPushService {
     }
 
     async fn run(self: Arc<Self>, provider: Arc<RingProvider>) {
-        let mut delay = MIN_RETRY;
+        let mut policy = ReconnectPolicy::default();
+        let mut rotate = false;
         loop {
-            match self.run_once(&provider).await {
-                Ok(true) => {
-                    tracing::warn!("Ring push connection ended; rotating registration");
-                    let store = Arc::clone(&self.store);
-                    match tokio::task::spawn_blocking(move || store.clear()).await {
-                        Ok(Ok(())) => {}
-                        Ok(Err(error)) => {
-                            tracing::warn!(error_class = %error, "Ring push registration rotation failed");
-                        }
-                        Err(error) => {
-                            tracing::warn!(error_class = %error, "Ring push registration rotation task failed");
-                        }
-                    }
-                }
-                Ok(false) => {
-                    tracing::info!("Ring push device subscription changed; reconnecting");
-                }
-                Err(PushError::Provider(BridgeError::ReauthRequired)) => {
-                    // Only a re-enrollment recovers; retry rarely and log once.
-                    self.reauth_state(true);
-                    delay = MAX_RETRY;
-                }
-                Err(error) => tracing::warn!(error_class = %error, "Ring push listener failed"),
-            }
-            let was_connected = self.metrics.connected();
+            let attempt = self.run_once(&provider, &mut rotate).await;
             self.metrics.set_connected(false);
-            self.metrics.failed();
-            if was_connected {
-                delay = MIN_RETRY;
+            let plan = policy.next(attempt, policy::jitter());
+            if plan.rotate {
+                tracing::warn!(
+                    "Ring push connections keep ending quickly; rotating the registration"
+                );
+                rotate = true;
             }
-            tokio::time::sleep(delay).await;
-            if !was_connected {
-                delay = delay.saturating_mul(2).min(MAX_RETRY);
-            }
+            tokio::time::sleep(plan.delay).await;
             self.metrics.reconnected();
         }
     }
 
-    async fn run_once(&self, provider: &RingProvider) -> Result<bool, PushError> {
-        let http = fcm_client()?;
-        let mut state = if let Some(state) = self.load().await? {
-            state
-        } else {
-            let registration = register(
-                &http,
-                FIREBASE_APP_ID,
-                FIREBASE_PROJECT_ID,
-                FIREBASE_API_KEY,
-                None,
-            )
-            .await
-            .map_err(|error| PushError::Fcm("registration", dispatch::bounded(&error)))?;
-            let state = RingPushState {
-                registration,
-                persistent_ids: Vec::new(),
-            };
-            self.persist(&state).await?;
-            state
+    async fn run_once(&self, provider: &RingProvider, rotate: &mut bool) -> Attempt {
+        let mut connected_at = None;
+        let result = self.connect(provider, rotate, &mut connected_at).await;
+        let uptime = connected_at.map(|at: Instant| at.elapsed());
+        let ending = match result {
+            Ok(Ending::Reload) => {
+                tracing::info!("Ring push device subscription changed; reconnecting");
+                Ending::Reload
+            }
+            Ok(ending) => {
+                tracing::warn!(
+                    ?ending,
+                    uptime_seconds = uptime.unwrap_or_default().as_secs(),
+                    "Ring push connection ended; reconnecting with the stored registration"
+                );
+                ending
+            }
+            Err(PushError::Provider(BridgeError::ReauthRequired)) => {
+                // Only a re-enrollment recovers; retry rarely and log once.
+                self.reauth_state(true);
+                Ending::Reauth
+            }
+            Err(error) => {
+                self.metrics.failed(error.stage());
+                tracing::warn!(error_class = %error, "Ring push listener failed");
+                match error {
+                    PushError::Rejected(..) => Ending::Rejected,
+                    // A transport error after login is the server dropping us.
+                    PushError::Fcm("connection", _) if uptime.is_some() => Ending::Dropped,
+                    _ => Ending::Failed,
+                }
+            }
         };
+        Attempt { ending, uptime }
+    }
+
+    async fn connect(
+        &self,
+        provider: &RingProvider,
+        rotate: &mut bool,
+        connected_at: &mut Option<Instant>,
+    ) -> Result<Ending, PushError> {
+        let http = fcm_client()?;
         let mut reload = self.reload.subscribe();
-        let client = provider.client().await?;
-        client
-            .register_push_token(&state.registration.fcm_token)
-            .await?;
-        self.reauth_state(false);
-        let device_id = self.subscribe_devices(&client).await?;
-        drop(client);
-        self.metrics.registered();
+        // The client holds the provider lifecycle lock; release it before listening.
+        let prepared = {
+            let client = provider.client().await?;
+            let registrar = session::LiveRegistrar {
+                http: &http,
+                client: &client,
+                service: self,
+            };
+            rotation::prepare(&self.store, &registrar, &self.metrics, rotate).await?
+        };
+        let mut state = prepared.state;
         let checked = state
             .registration
             .gcm
             .checkin(&http)
             .await
-            .map_err(|error| PushError::Fcm("check-in", dispatch::bounded(&error)))?;
+            .map_err(|error| {
+                let text = dispatch::bounded(&error);
+                match error {
+                    fcm_push_listener::Error::DependencyRejection(..)
+                    | fcm_push_listener::Error::DependencyFailure(..) => {
+                        PushError::Rejected("check-in", text)
+                    }
+                    _ => PushError::Fcm("check-in", text),
+                }
+            })?;
         if checked.changed(&state.registration.gcm) {
             state.registration.gcm = checked.session();
-            self.persist(&state).await?;
+            persist::persist(&self.store, &state).await?;
         }
-        let connection = checked
-            .new_connection(state.persistent_ids.clone())
-            .await
-            .map_err(|error| PushError::Fcm("connection", dispatch::bounded(&error)))?;
-        let mut stream = MessageStream::wrap(connection, &state.registration.keys);
-        self.metrics.set_connected(true);
-        loop {
-            let message = tokio::select! {
-                message = stream.next() => message,
-                _ = reload.changed() => return Ok(false),
-            };
-            let Some(message) = message else {
-                break;
-            };
-            // Only transport failures reach here; per-message problems arrive as
-            // `Undecryptable` and must not drop the connection.
-            match message
-                .map_err(|error| PushError::Fcm("connection", dispatch::bounded(&error)))?
-            {
-                Message::HeartbeatPing => {
-                    stream
-                        .write_all(&new_heartbeat_ack())
-                        .await
-                        .map_err(|error| {
-                            PushError::Fcm("heartbeat acknowledgement", dispatch::bounded(&error))
-                        })?;
-                }
-                Message::Data(message) => {
-                    self.handle_message(&device_id, &message.body).await;
-                    if let Some(id) = message.persistent_id {
-                        state.remember(id);
-                        self.persist(&state).await?;
-                    }
-                }
-                Message::Undecryptable {
-                    persistent_id,
-                    error,
-                } => {
-                    self.handle_undecryptable(&error);
-                    // Acknowledge it so FCM stops redelivering the same stanza.
-                    if let Some(id) = persistent_id {
-                        state.remember(id);
-                        self.persist(&state).await?;
-                    }
-                }
-                Message::Other(_, _) => self.metrics.ignored(),
-            }
-        }
-        Ok(true)
+        self.listen(
+            checked,
+            &mut state,
+            &prepared.devices,
+            &mut reload,
+            connected_at,
+        )
+        .await
     }
 }
 
@@ -231,9 +207,18 @@ mod ding_watch;
 mod dispatch;
 #[path = "ring_push_persist.rs"]
 mod persist;
+#[path = "ring_push_policy.rs"]
+mod policy;
+#[path = "ring_push_rotation.rs"]
+mod rotation;
+#[path = "ring_push_session.rs"]
+mod session;
 #[path = "ring_unlock_watch.rs"]
 mod unlock_watch;
 
 #[cfg(test)]
 #[path = "ring_push_multidevice_tests.rs"]
 mod multi_tests;
+#[cfg(test)]
+#[path = "ring_push_rotation_tests.rs"]
+mod rotation_tests;

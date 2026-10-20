@@ -17,7 +17,6 @@ devices_config="$(ring_device_config "${options_file}")" || {
     exit 1
 }
 app_info="$(vistoda_supervisor_app_info)"
-app_hostname="$(printf '%s' "${app_info}" | jq -er '.data.hostname')"
 app_slug="$(printf '%s' "${app_info}" | jq -er '.data.slug')"
 storage_choice="$(jq -er '(.recording_storage // "private") | strings |
     select(. == "private" or . == "addon_config" or . == "media" or . == "share"
@@ -71,20 +70,18 @@ export RING_INTERCOM_RECORDING_STORAGE_KIND="${recording_storage_kind}"
 vistoda_start_child gosu bridge:bridge ring-intercom-bridge serve
 vistoda_wait_for_health http://127.0.0.1:8775/healthz 30 1
 
-private_url="http://${app_hostname}:8775"
 discovery_devices="$(ring_discovery_devices "${token_file}" "${devices_file}")"
+# The kit adds url (http://HOSTNAME:8775) and managed_app: true to this config.
 jq -n \
-    --arg service media_bridge \
     --arg provider ring \
-    --arg url "${private_url}" \
     --arg alias "${alias_name}" \
     --argjson devices "${discovery_devices}" \
     --rawfile api_token "${token_file}" \
-    '{service: $service, config: {provider: $provider, url: $url,
+    '{provider: $provider,
       alias: (if $devices | has($alias) then $alias else ($devices | keys[0]) end),
       aliases: ($devices | keys),
       devices: ($devices | to_entries | map({alias: .key, device_id: .value.device_id})),
-      api_token: ($api_token | gsub("\\s"; "")), managed_app: true}}' |
-    vistoda_publish_discovery
+      api_token: ($api_token | gsub("\\s"; ""))}' |
+    vistoda_publish_app_discovery media_bridge 8775
 
 vistoda_wait_child

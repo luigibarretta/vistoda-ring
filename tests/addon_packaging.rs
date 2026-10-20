@@ -26,11 +26,11 @@ fn home_assistant_app_is_private_discovered_and_multiarch() {
     assert!(dockerfile.contains("HEALTHCHECK"));
     assert!(dockerfile.contains("vistoda-app-bootstrap.sh"));
     assert!(runner.contains("vistoda_supervisor_app_info"));
-    assert!(runner.contains("vistoda_publish_discovery"));
+    assert!(runner.contains("vistoda_publish_app_discovery media_bridge 8775"));
+    assert!(bootstrap.contains("managed_app: true"));
     assert!(bootstrap.contains("http://supervisor/discovery"));
     assert!(bootstrap.contains("http://supervisor/addons/self/info"));
     assert!(runner.contains("--rawfile api_token"));
-    assert!(runner.contains("managed_app: true"));
     assert!(runner.contains("RING_INTERCOM_RECORDING_DISPLAY_DIR"));
     assert!(runner.contains("RING_INTERCOM_RECORDING_STORAGE_KIND"));
     assert!(runner.contains("migrate_recordings"));

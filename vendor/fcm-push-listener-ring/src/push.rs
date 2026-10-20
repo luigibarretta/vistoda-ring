@@ -55,6 +55,8 @@ impl TryFrom<u8> for MessageTag {
 
 pub enum Message {
     HeartbeatPing,
+    /// The server's answer to a client heartbeat ping.
+    HeartbeatAck,
     Data(DataMessage),
     /// A data stanza that could not be decrypted. It is surfaced (instead of
     /// failing the stream) so the consumer can acknowledge its persistent ID
@@ -275,6 +277,7 @@ where
                             DataMessage::decode(&self.eckey, &self.auth_secret, &bytes)
                         }
                         Ok(MessageTag::HeartbeatPing) => Message::HeartbeatPing,
+                        Ok(MessageTag::HeartbeatAck) => Message::HeartbeatAck,
                         _ => Message::Other(tag_value, bytes.into()),
                     })));
                 }
@@ -333,6 +336,20 @@ impl<T> std::ops::DerefMut for MessageStream<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
+}
+
+/// A client heartbeat ping; the server answers with `Message::HeartbeatAck`,
+/// so a silent socket is detectable without waiting for server pings.
+pub fn new_heartbeat_ping() -> BytesMut {
+    use bytes::BufMut;
+
+    let ping = crate::mcs::HeartbeatPing::default();
+    let mut bytes = BytesMut::with_capacity(prost::Message::encoded_len(&ping) + 5);
+    bytes.put_u8(MessageTag::HeartbeatPing as u8);
+    prost::Message::encode_length_delimited(&ping, &mut bytes)
+        .expect("heartbeat ping serialization should succeed");
+
+    bytes
 }
 
 pub fn new_heartbeat_ack() -> BytesMut {

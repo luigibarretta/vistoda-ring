@@ -90,6 +90,7 @@ struct Health<'a> {
     phase: &'a str,
     version: &'a str,
     push_connected: bool,
+    push_state_reset: bool,
 }
 
 #[derive(Serialize)]
@@ -136,6 +137,7 @@ async fn health(State(runtime): State<Arc<Runtime>>) -> Json<Health<'static>> {
         phase: "verified",
         version: env!("CARGO_PKG_VERSION"),
         push_connected: runtime.push.connected(),
+        push_state_reset: runtime.push.state_reset(),
     })
 }
 

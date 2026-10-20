@@ -52,6 +52,8 @@ struct ClientState {
     rotation_pending: bool,
     /// Last FCM token registered, re-sent after every session registration.
     push_token: Option<Zeroizing<String>>,
+    /// Until when Ring is assumed to refuse the app-format push record.
+    legacy_record_until: Option<Instant>,
     /// Set while a revoked refresh token is reported without contacting Ring.
     reauth_until: Option<Instant>,
 }
@@ -92,6 +94,7 @@ impl RingClient {
                 registered_until: None,
                 rotation_pending: false,
                 push_token: None,
+                legacy_record_until: None,
                 reauth_until: None,
             })),
             selected_device_id: None,

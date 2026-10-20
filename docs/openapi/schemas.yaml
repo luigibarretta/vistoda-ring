@@ -47,6 +47,11 @@ Health:
       type: string
     push_connected:
       type: boolean
+    push_state_reset:
+      type: boolean
+      description: >-
+        True when the stored push registration was unreadable since the
+        provider started; it was moved aside and a new one registered.
 Device:
   type: object
   additionalProperties: false

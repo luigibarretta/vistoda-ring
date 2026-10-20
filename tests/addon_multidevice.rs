@@ -90,28 +90,34 @@ fn discovery_with_devices(
     )
     .unwrap_or_else(|error| panic!("runner: {error}"));
     let discovery = runner
-        .split_once("private_url=")
+        .split_once("\ndiscovery_devices=")
         .unwrap_or_else(|| panic!("discovery"))
         .1
         .split("\nvistoda_wait_child")
         .next()
         .unwrap_or_else(|| panic!("tail"));
+    // The real kit bootstrap merges url and managed_app into the config.
     let script = format!(
-        ". \"$HELPER\"\n\
+        ". \"$BOOTSTRAP\"\n. \"$HELPER\"\n\
          curl() {{ IFS= read -r authorization; test \"$authorization\" = \
          \"header = \\\"Authorization: Bearer $(cat \"$token_file\")\\\"\" || exit 91; \
          test \"$*\" = '--config - --silent --fail --connect-timeout 2 --max-time 10 \
          --max-filesize 131072 http://127.0.0.1:8775/v1/intercoms' || exit 92; \
          test -f \"$RESPONSE\" || return 22; cat \"$RESPONSE\"; }}\n\
-         vistoda_publish_discovery() {{ cat; }}\nprivate_url={discovery}"
+         vistoda_supervisor_app_info() {{ printf '{{\"data\":{{\"hostname\":\"fixture-provider\"}}}}'; }}\n\
+         vistoda_publish_discovery() {{ cat; }}\ndiscovery_devices={discovery}"
     );
     let output = Command::new("sh")
         .args(["-eu", "-c", &script])
-        .env("app_hostname", "fixture-provider")
         .env("alias_name", "entrance")
         .env("devices_file", &devices)
         .env("token_file", &token)
         .env("RESPONSE", &response)
+        .env(
+            "BOOTSTRAP",
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("packaging/home-assistant/vistoda-app-bootstrap.sh"),
+        )
         .env(
             "HELPER",
             Path::new(env!("CARGO_MANIFEST_DIR")).join("packaging/home-assistant/device-config.sh"),
@@ -138,6 +144,27 @@ fn supervisor_gets_one_complete_discovery_payload_before_enrollment() {
     );
     assert_eq!(payload["config"]["devices"][1]["device_id"], "202");
     assert_eq!(payload["config"]["url"], "http://fixture-provider:8775");
+    assert_eq!(payload["config"]["managed_app"], true);
+    assert_eq!(payload["config"]["provider"], "ring");
+    assert_eq!(payload["config"]["api_token"], "a".repeat(64));
+    let mut keys: Vec<&String> = payload["config"]
+        .as_object()
+        .unwrap_or_else(|| panic!("config object"))
+        .keys()
+        .collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        [
+            "alias",
+            "aliases",
+            "api_token",
+            "devices",
+            "managed_app",
+            "provider",
+            "url"
+        ]
+    );
 }
 
 #[test]

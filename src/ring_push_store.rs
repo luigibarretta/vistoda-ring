@@ -29,7 +29,22 @@ pub struct RingPushState {
     pub persistent_ids: Vec<String>,
 }
 
+/// What `load` found. An unreadable document is moved aside, never deleted,
+/// so a fresh registration can proceed while the evidence is kept.
+pub enum StoredPush {
+    Present(RingPushState),
+    Absent,
+    Quarantined,
+}
+
 impl RingPushState {
+    pub const fn new(registration: Registration) -> Self {
+        Self {
+            registration,
+            persistent_ids: Vec::new(),
+        }
+    }
+
     pub fn remember(&mut self, persistent_id: String) {
         if persistent_id.is_empty()
             || persistent_id.len() > 512
@@ -53,19 +68,50 @@ impl RingPushStore {
         Self { path }
     }
 
-    pub fn load(&self) -> Result<Option<RingPushState>, BridgeError> {
+    /// Permission and I/O problems stay fail-closed; only unparsable or
+    /// invalid content is quarantined.
+    pub fn load(&self) -> Result<StoredPush, BridgeError> {
         let file = match open_restricted(&self.path) {
             Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(StoredPush::Absent);
+            }
             Err(error) => return Err(error.into()),
         };
         validate_permissions(&file)?;
-        let document: PushDocument = serde_json::from_slice(&read_bounded(file)?)?;
-        validate_document(&document)?;
-        Ok(Some(RingPushState {
+        let document = read_bounded(file)?
+            .and_then(|bytes| serde_json::from_slice::<PushDocument>(&bytes).ok())
+            .filter(valid_document);
+        let Some(document) = document else {
+            self.quarantine()?;
+            return Ok(StoredPush::Quarantined);
+        };
+        Ok(StoredPush::Present(RingPushState {
             registration: document.registration,
             persistent_ids: document.persistent_ids,
         }))
+    }
+
+    /// Path of the single quarantine slot; a newer corrupt file replaces it.
+    pub fn quarantine_path(&self) -> PathBuf {
+        let mut name = self.path.file_name().unwrap_or_default().to_owned();
+        name.push(".corrupt");
+        self.path.with_file_name(name)
+    }
+
+    fn quarantine(&self) -> Result<(), BridgeError> {
+        fs::rename(&self.path, self.quarantine_path())?;
+        if let Some(parent) = self
+            .path
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+        {
+            File::open(parent)?.sync_all()?;
+        }
+        tracing::warn!(
+            "Ring push registration file was unreadable; moved it aside and registering again"
+        );
+        Ok(())
     }
 
     pub fn persist(&self, state: &RingPushState) -> Result<(), BridgeError> {
@@ -85,19 +131,6 @@ impl RingPushStore {
             let _ignored = fs::remove_file(temporary);
         }
         result
-    }
-
-    pub fn clear(&self) -> Result<(), BridgeError> {
-        match fs::remove_file(&self.path) {
-            Ok(()) => {
-                if let Some(parent) = self.path.parent() {
-                    File::open(parent)?.sync_all()?;
-                }
-                Ok(())
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error.into()),
-        }
     }
 }
 
@@ -125,33 +158,26 @@ fn write_and_replace(
     Ok(())
 }
 
-fn read_bounded(file: File) -> Result<Zeroizing<Vec<u8>>, BridgeError> {
+/// `None` when the document exceeds the size bound.
+fn read_bounded(file: File) -> Result<Option<Zeroizing<Vec<u8>>>, BridgeError> {
     let mut bytes = Zeroizing::new(Vec::with_capacity(4 * 1024));
     let limit = u64::try_from(MAX_PUSH_BYTES + 1)
         .map_err(|_| configuration("push state size limit is invalid"))?;
     let mut reader: Take<File> = file.take(limit);
     reader.read_to_end(&mut bytes)?;
-    if bytes.len() > MAX_PUSH_BYTES {
-        return Err(configuration("push state exceeds 64 KiB"));
-    }
-    Ok(bytes)
+    Ok((bytes.len() <= MAX_PUSH_BYTES).then_some(bytes))
 }
 
-fn validate_document(document: &PushDocument) -> Result<(), BridgeError> {
+fn valid_document(document: &PushDocument) -> bool {
     let token = &document.registration.fcm_token;
-    if document.schema_version != 1
-        || token.len() < 32
-        || token.len() > 4096
-        || !token.bytes().all(|byte| byte.is_ascii_graphic())
-        || document.persistent_ids.len() > MAX_PERSISTENT_IDS
-        || document
+    document.schema_version == 1
+        && (32..=4096).contains(&token.len())
+        && token.bytes().all(|byte| byte.is_ascii_graphic())
+        && document.persistent_ids.len() <= MAX_PERSISTENT_IDS
+        && document
             .persistent_ids
             .iter()
-            .any(|value| value.is_empty() || value.len() > 512 || !value.is_ascii())
-    {
-        return Err(configuration("push state failed validation"));
-    }
-    Ok(())
+            .all(|value| !value.is_empty() && value.len() <= 512 && value.is_ascii())
 }
 
 fn open_restricted(path: &Path) -> Result<File, std::io::Error> {
@@ -193,4 +219,4 @@ fn configuration(message: &str) -> BridgeError {
 
 #[cfg(test)]
 #[path = "ring_push_store_tests.rs"]
-mod tests;
+pub mod tests;

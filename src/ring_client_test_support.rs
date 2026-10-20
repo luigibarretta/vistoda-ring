@@ -24,6 +24,7 @@ use super::super::{Endpoints, RingClient};
 
 #[path = "ring_client_test_controls.rs"]
 mod controls;
+pub use controls::assert_session_token;
 
 const HARDWARE_ID: &str = "846f72e4-6b44-46a1-b3f5-5e8054486327";
 const REFRESH_A: &str = "synthetic_refresh_token_a_1234567890abcdef";
@@ -49,6 +50,7 @@ pub struct MockState {
     pub include_cameras: bool,
     pub last_control_device: AtomicUsize,
     pub location_status: u16,
+    pub push_attempts: AtomicUsize,
 }
 
 pub struct TestHarness {
@@ -224,23 +226,6 @@ pub(super) fn valid_bearer(headers: &HeaderMap) -> bool {
         headers.get("authorization").and_then(|value| value.to_str().ok()),
         Some(value) if value == format!("Bearer {ACCESS_A}") || value == format!("Bearer {ACCESS_B}")
     )
-}
-
-pub fn assert_session_token(path: &std::path::Path, expected: &str) {
-    let value: Value = serde_json::from_slice(
-        &fs::read(path).unwrap_or_else(|error| panic!("session read failed: {error}")),
-    )
-    .unwrap_or_else(|error| panic!("session JSON failed: {error}"));
-    assert_eq!(value["refresh_token"], expected);
-    #[cfg(unix)]
-    assert_eq!(
-        fs::metadata(path)
-            .unwrap_or_else(|error| panic!("session metadata failed: {error}"))
-            .permissions()
-            .mode()
-            & 0o077,
-        0
-    );
 }
 
 fn session_document(token: &str) -> String {

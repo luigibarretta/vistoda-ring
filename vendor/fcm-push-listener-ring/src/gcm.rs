@@ -17,6 +17,21 @@ fn require_some<T>(value: Option<T>, reason: &'static str) -> Result<T, Error> {
 
 const CHECKIN_URL: &str = "https://android.clients.google.com/checkin";
 const REGISTER_URL: &str = "https://android.clients.google.com/c2dm/register3";
+const MCS_ADDRESS: &str = "mtalk.google.com:5228";
+/// Bounds the TCP connect to the MCS endpoint.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Bounds the TLS handshake, the login write and the version byte.
+const HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// A non-success HTTP status is a rejection, never a body to decode.
+fn reject_status(api: &'static str, status: reqwest::StatusCode, detail: &str) -> Error {
+    let detail: String = detail.chars().take(80).collect();
+    if detail.is_empty() {
+        Error::DependencyRejection(api, format!("HTTP {}", status.as_u16()))
+    } else {
+        Error::DependencyRejection(api, format!("HTTP {}: {detail}", status.as_u16()))
+    }
+}
 
 // Normal JSON serialization will lose precision and change the number, so we must
 // force the i64/u64 to serialize to string.
@@ -59,6 +74,10 @@ impl Session {
             .send()
             .await
             .map_err(|e| Error::Request(API_NAME, e))?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(reject_status(API_NAME, status, ""));
+        }
 
         let response_bytes = response
             .bytes()
@@ -98,7 +117,12 @@ impl Session {
         Self::request(http, None, None)
     }
 
-    pub async fn request_token(&self, app_id: &str) -> Result<String, Error> {
+    /// Request a GCM registration token with the caller's bounded HTTP client.
+    pub async fn request_token(
+        &self,
+        http: &reqwest::Client,
+        app_id: &str,
+    ) -> Result<String, Error> {
         /// Server key in URL-safe base64
         const SERVER_KEY: &str =
             "BDOU99-h67HcA6JeFXHbSNMu7e2yNNu3RzoMj8TM4W88jITfq7ZmPvIM1Iv-4_l2LxQcYwhqby2xGpWwzjfAnG4";
@@ -112,18 +136,23 @@ impl Session {
         params.insert("sender", SERVER_KEY);
 
         const API_NAME: &str = "GCM registration";
-        let result = reqwest::Client::new()
+        let result = http
             .post(REGISTER_URL)
             .form(&params)
             .header(reqwest::header::AUTHORIZATION, auth_header)
             .send()
             .await
             .map_err(|e| Error::Request(API_NAME, e))?;
+        let status = result.status();
 
         let response_text = result
             .text()
             .await
             .map_err(|e| Error::Response(API_NAME, e))?;
+        if !status.is_success() {
+            let reason = response_text.strip_prefix("Error=").unwrap_or_default();
+            return Err(reject_status(API_NAME, status, reason.trim()));
+        }
 
         const ERR_EOF: Error = Error::DependencyFailure(API_NAME, "malformed response");
 
@@ -203,14 +232,27 @@ impl CheckedSession {
         login_bytes: &[u8],
     ) -> Result<Connection, tokio::io::Error> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let stream = tokio::net::TcpStream::connect("mtalk.google.com:5228").await?;
+        let timed_out = |stage: &str| {
+            tokio::io::Error::new(
+                tokio::io::ErrorKind::TimedOut,
+                format!("MCS {stage} timed out"),
+            )
+        };
+        let stream =
+            tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect(MCS_ADDRESS))
+                .await
+                .map_err(|_| timed_out("connect"))??;
         let tls = new_tls_initiator();
-        let mut stream = tls.connect(domain, stream).await?;
-
-        stream.write_all(login_bytes).await?;
-
-        // Read the version
-        stream.read_i8().await?;
+        let handshake = async move {
+            let mut stream = tls.connect(domain, stream).await?;
+            stream.write_all(login_bytes).await?;
+            // Read the version
+            stream.read_i8().await?;
+            Ok::<_, tokio::io::Error>(stream)
+        };
+        let stream = tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake)
+            .await
+            .map_err(|_| timed_out("handshake"))??;
 
         Ok(Connection(stream))
     }

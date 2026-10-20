@@ -75,12 +75,17 @@ not read or expose the API token or Ring session.
 
 Native push needs outbound HTTPS plus TCP/5228 to `mtalk.google.com`. Its
 registration and acknowledged persistent IDs are atomically stored as a 0600
-file. `/healthz` reports only whether the push socket is connected; Prometheus
-exports aggregate reconnect/error/event counters without payload or device IDs.
-The token is registered with `PATCH clients_api/device` in the official
-Android app's record format (payload dictionary 2.4.0, app brand, hardware ID,
-notification status, app identity headers) and re-sent after every Ring
-session registration, which otherwise drops it.
+file. A disconnect reconnects with the stored registration; it is rotated only
+after repeated quick disconnects, make-before-break, keeping the old one if
+the new one fails ([ADR 0021](docs/adr/0021-native-ring-push-events.md)).
+`/healthz` reports only whether the push socket is connected and whether an
+unreadable registration file was replaced; Prometheus exports aggregate
+reconnect/rotation/error/event counters without payload or device IDs.
+The token is registered with `PATCH clients_api/device` and re-sent after every
+Ring session registration, which otherwise drops it. The official Android
+app's record (payload dictionary 2.4.0) is offered first; Ring currently
+refuses it, so the legacy 2.0.0 record is used and the app format re-probed
+daily.
 
 Every response carries a server-generated `x-request-id`. Failed requests log
 only that ID, method, normalized route, status, latency and a bounded error

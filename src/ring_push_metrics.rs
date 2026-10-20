@@ -1,6 +1,10 @@
 use std::{
+    collections::BTreeMap,
     fmt::Write,
-    sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+    },
 };
 
 use crate::ring_push_event::RingPushEventKind;
@@ -13,12 +17,17 @@ pub struct RingPushMetrics {
     missed_dings: AtomicU64,
     registrations: AtomicU64,
     reconnects: AtomicU64,
-    errors: AtomicU64,
+    rotations: AtomicU64,
+    state_resets: AtomicU64,
+    legacy_record: AtomicBool,
+    /// Failures per stage; stages are static strings, so the label set is bounded.
+    errors: Mutex<BTreeMap<&'static str, u64>>,
     ding: AtomicU64,
     unlock: AtomicU64,
     ignored: AtomicU64,
     undecryptable: AtomicU64,
     last_event: AtomicI64,
+    last_heartbeat: AtomicI64,
 }
 
 impl RingPushMetrics {
@@ -55,8 +64,33 @@ impl RingPushMetrics {
         self.reconnects.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn failed(&self) {
-        self.errors.fetch_add(1, Ordering::Relaxed);
+    pub fn failed(&self, stage: &'static str) {
+        if let Ok(mut errors) = self.errors.lock() {
+            *errors.entry(stage).or_default() += 1;
+        }
+    }
+
+    pub fn rotated(&self) {
+        self.rotations.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The stored registration was unreadable and has been moved aside.
+    pub fn state_reset(&self) {
+        self.state_resets.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn state_was_reset(&self) -> bool {
+        self.state_resets.load(Ordering::Relaxed) > 0
+    }
+
+    /// Ring refused the app-format device record and holds the legacy one.
+    pub fn set_legacy_record(&self, value: bool) {
+        self.legacy_record.store(value, Ordering::Relaxed);
+    }
+
+    /// A server heartbeat ping or an acknowledgement of ours arrived.
+    pub fn heartbeat(&self, at: i64) {
+        self.last_heartbeat.store(at, Ordering::Relaxed);
     }
 
     pub fn ignored(&self) {
@@ -100,9 +134,20 @@ impl RingPushMetrics {
         );
         counter(
             &mut output,
-            "vistoda_ring_push_errors_total",
-            self.errors.load(Ordering::Relaxed),
+            "vistoda_ring_push_rotations_total",
+            self.rotations.load(Ordering::Relaxed),
         );
+        counter(
+            &mut output,
+            "vistoda_ring_push_state_resets_total",
+            self.state_resets.load(Ordering::Relaxed),
+        );
+        gauge(
+            &mut output,
+            "vistoda_ring_push_legacy_record",
+            u64::from(self.legacy_record.load(Ordering::Relaxed)),
+        );
+        self.render_errors(&mut output);
         let _ = writeln!(output, "# TYPE vistoda_ring_push_events_total counter");
         let _ = writeln!(
             output,
@@ -137,10 +182,42 @@ impl RingPushMetrics {
         gauge(
             &mut output,
             "vistoda_ring_push_last_event_timestamp_seconds",
-            u64::try_from(self.last_event.load(Ordering::Relaxed).max(0)).unwrap_or_default(),
+            timestamp(&self.last_event),
+        );
+        gauge(
+            &mut output,
+            "vistoda_ring_push_last_heartbeat_timestamp_seconds",
+            timestamp(&self.last_heartbeat),
         );
         output
     }
+
+    fn render_errors(&self, output: &mut String) {
+        let _ = writeln!(output, "# TYPE vistoda_ring_push_errors_total counter");
+        let Ok(errors) = self.errors.lock() else {
+            return;
+        };
+        for (stage, count) in errors.iter() {
+            let label: String = stage
+                .chars()
+                .map(|value| {
+                    if value.is_ascii_alphanumeric() {
+                        value.to_ascii_lowercase()
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let _ = writeln!(
+                output,
+                "vistoda_ring_push_errors_total{{stage=\"{label}\"}} {count}"
+            );
+        }
+    }
+}
+
+fn timestamp(value: &AtomicI64) -> u64 {
+    u64::try_from(value.load(Ordering::Relaxed).max(0)).unwrap_or_default()
 }
 
 fn gauge(output: &mut String, name: &str, value: u64) {

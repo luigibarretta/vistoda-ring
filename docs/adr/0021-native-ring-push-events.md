@@ -48,3 +48,37 @@ silently losing events. A process restart changes the generation and resets the
 public cursor while preserving FCM acknowledgements. Consumers discard the old
 cursor and resume at the new live tail, so old provider messages are not
 replayed and a stale cursor cannot stall delivery.
+
+## Amendment (0.18.0): make-before-break connection lifecycle
+
+Until 0.17 every ended MCS connection deleted the stored registration and
+registered from scratch. On 2026-10-20 Google answered the fresh check-in with
+`PHONE_REGISTRATION_ERROR` five times in a row, so a routine disconnect became
+a three-minute push outage. The lifecycle is now:
+
+- a plain disconnect reconnects with the stored registration;
+- the registration rotates only after three consecutive suspect endings: the
+  server closing a connection that was up for less than 60 seconds, or GCM
+  check-in refusing the stored credentials;
+- a rotation registers new credentials, hands the token to Ring and subscribes
+  the Intercoms, and only then atomically replaces the file; the old file is
+  never deleted first, and any failed step keeps and uses the old
+  registration;
+- the GCM token request is retried up to five times, 1-2 seconds apart, on the
+  same check-in instead of creating a new Android device per retry;
+- the backoff (5 seconds doubling to 5 minutes, plus up to 25% jitter) resets
+  only after a connection stayed up for 60 seconds;
+- MCS connect and TLS handshake are bounded (10 and 15 seconds), the client
+  sends a heartbeat ping every 5 minutes and treats 10 minutes without inbound
+  traffic as a dead socket;
+- an unparsable registration file is moved aside as `<file>.corrupt` and
+  replaced; permission and I/O problems stay fail-closed. `/healthz` reports
+  `push_state_reset=true` until the next start;
+- Ring refuses the app-format device record (HTTP 400) and accepts the legacy
+  2.0.0 record. The refusal is cached per client and re-probed daily; 401 and
+  429 never trigger the fallback.
+
+Prometheus adds `vistoda_ring_push_errors_total{stage=…}` (device-change
+reloads are not errors), `vistoda_ring_push_rotations_total`,
+`vistoda_ring_push_state_resets_total`, `vistoda_ring_push_legacy_record` and
+`vistoda_ring_push_last_heartbeat_timestamp_seconds`.
