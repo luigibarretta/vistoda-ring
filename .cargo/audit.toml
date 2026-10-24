@@ -6,4 +6,9 @@ ignore = [
     # tokio-tungstenite 0.30 still requires the 0.26 name. Remove this entry once
     # it depends on webpki-roots 1 directly.
     "RUSTSEC-2026-0381",
+    # crypto-bigint 0.5.5 timing variability (fixed only in 0.7.6). It reaches the
+    # binary solely through p256 0.13 in webrtc/rtc-dtls 0.20 for per-call DTLS
+    # key exchange; no lockfile-only fix exists. Remove this entry with the
+    # webrtc 0.21 upgrade, whose DTLS stack no longer depends on p256 0.13.
+    "RUSTSEC-2026-0387",
 ]
