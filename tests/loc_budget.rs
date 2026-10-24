@@ -5,7 +5,9 @@ use std::{
 };
 
 const MAX_LINES: usize = 250;
-const EXCLUDED_DIRECTORIES: &[&str] = &[".git", "target", "vendor"];
+// `third_party` holds byte-verified vendored tooling (repo-tooling's ci-local)
+// and `.ci` the pinned upstream checkouts CI and ci-local fetch for comparison.
+const EXCLUDED_DIRECTORIES: &[&str] = &[".ci", ".git", "target", "third_party", "vendor"];
 const MAINTAINED_SUFFIXES: &[&str] = &["json", "md", "rs", "sh", "toml", "yaml", "yml"];
 
 #[test]

@@ -130,14 +130,20 @@ Only exact version tags passing quality, security and provenance gates are relea
 Read the family [contribution guide](https://github.com/luigibarretta/vistoda-home-assistant/blob/main/CONTRIBUTING.md)
 first to understand repository ownership and cross-repository release order.
 
+Every CI check is listed in [`ci-local.json`](ci-local.json) and runs through
+the vendored [`ci-local`](https://git.luigibarretta.com/luigibarretta/repo-tooling)
+gate; CI calls the same steps with `--ci` ([ADR 0022](docs/adr/0022-shared-local-ci-gate.md)):
+
 ```bash
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets
-cargo audit --deny warnings
+node third_party/repo-tooling/ci-local.mjs --quick   # kit, release, secrets, fmt, audit
+node third_party/repo-tooling/ci-local.mjs           # full gate before a push
 docker build -t ring-intercom-bridge:test .
 docker run --rm --network none --read-only ring-intercom-bridge:test --version
 ```
+
+The full gate needs Node.js 20 or newer, `cargo-audit` 0.22.2 and
+`protobuf-compiler`. The image build and smoke test are not gate steps; CI runs
+them after the gate.
 
 The declared MSRV is Rust 1.96, required by the audited WebRTC dependency
 graph and enforced by the production builder image.
