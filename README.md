@@ -6,6 +6,11 @@ The Rust package and executable remain `ring-intercom-bridge` as a compatibility
 contract for existing images, health checks and automation. The product and
 canonical repository are Vistoda Ring and `vistoda-ring`.
 
+<p align="center">
+  <img src="docs/images/ring.png" alt="Vistoda Ring Intercom page in Home Assistant: start conversation, event history, unlock entrance, battery and volume controls" width="80%">
+</p>
+<p align="center"><sub>Ring Intercom in the Vistoda panel: two-way audio, unlock and volumes. Location redacted.</sub></p>
+
 ## Current status
 
 The released provider supports password/SMS enrollment, multiple intercom
