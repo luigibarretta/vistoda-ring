@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use rtc::{
     media_stream::MediaStreamTrack,
@@ -36,20 +36,23 @@ pub fn local_track(
 ) -> Result<Arc<TrackLocalStaticSample>, BridgeError> {
     let id = Uuid::new_v4();
     let ssrc = u32::from_le_bytes(id.as_bytes()[..4].try_into().unwrap_or([0, 0, 0, 1])).max(1);
-    TrackLocalStaticSample::new(MediaStreamTrack::new(
-        "ring-intercom-relay".into(),
-        "audio".into(),
-        "ring-intercom-relay".into(),
-        RtpCodecKind::Audio,
-        vec![RTCRtpEncodingParameters {
-            rtp_coding_parameters: RTCRtpCodingParameters {
-                ssrc: Some(ssrc),
+    TrackLocalStaticSample::new(
+        Instant::now(),
+        MediaStreamTrack::new(
+            "ring-intercom-relay".into(),
+            "audio".into(),
+            "ring-intercom-relay".into(),
+            RtpCodecKind::Audio,
+            vec![RTCRtpEncodingParameters {
+                rtp_coding_parameters: RTCRtpCodingParameters {
+                    ssrc: Some(ssrc),
+                    ..Default::default()
+                },
+                codec: codec.rtp_codec.clone(),
                 ..Default::default()
-            },
-            codec: codec.rtp_codec.clone(),
-            ..Default::default()
-        }],
-    ))
+            }],
+        ),
+    )
     .map(Arc::new)
     .map_err(|_| protocol("local audio track setup failed"))
 }

@@ -27,8 +27,10 @@
   repetitions on 2026-08-15 proved the same path on
   `intercom_handset_audio`: bidirectional SDP, connected DTLS/SRTP, inbound
   PCMU RTP, outbound silence and complete teardown without a remote close.
-- The maintained canary uses `webrtc` 0.20.2 and passes the strict RustSec
+- The maintained canary uses `webrtc` 0.21.1 and passes the strict RustSec
   audit; its semantic output contains no Ring identity, SDP, ICE or audio.
+  The 0.20.2 owned-device evidence above predates this stack; 0.21 is proven
+  offline by loopback DTLS/SRTP tests and needs a live call before deploy.
 - The owned integration exposes `event.citofono_ding`; this is a stable local
   trigger for Companion incoming-call notifications.
 - The owned Ring account and official application expose no Call Recording

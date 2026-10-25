@@ -36,6 +36,8 @@ mod ring_media_canary_tests;
 mod ring_media_handler;
 mod ring_media_network;
 mod ring_media_peer;
+#[cfg(test)]
+mod ring_media_peer_tests;
 mod ring_media_sender;
 mod ring_media_setup;
 mod ring_metrics;

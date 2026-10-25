@@ -34,6 +34,11 @@ use crate::{
     ring_relay_metrics::RelayMetrics,
 };
 
+pub const STUN_URLS: [&str; 2] = [
+    "stun:stun.kinesisvideo.us-east-1.amazonaws.com:443",
+    "stun:stun.l.google.com:19302",
+];
+
 pub struct MediaPeer {
     connection: Arc<dyn PeerConnection>,
     local_audio: Arc<TrackLocalStaticSample>,
@@ -59,6 +64,29 @@ impl MediaPeer {
         outbound: Option<mpsc::Sender<Vec<u8>>>,
         relay_metrics: Option<Arc<RelayMetrics>>,
     ) -> Result<Self, BridgeError> {
+        let ice_servers = vec![RTCIceServer {
+            urls: STUN_URLS.iter().map(|url| (*url).to_owned()).collect(),
+            ..Default::default()
+        }];
+        let bind_address = format!("{}:0", routed_local_ip()?);
+        Self::build_on(bind_address, ice_servers, outbound, relay_metrics).await
+    }
+
+    /// Offline peer on loopback without STUN, for the in-process DTLS/SRTP tests.
+    #[cfg(test)]
+    pub async fn new_loopback(
+        outbound: Option<mpsc::Sender<Vec<u8>>>,
+        metrics: Option<Arc<RelayMetrics>>,
+    ) -> Result<Self, BridgeError> {
+        Self::build_on("127.0.0.1:0".into(), Vec::new(), outbound, metrics).await
+    }
+
+    async fn build_on(
+        bind_address: String,
+        ice_servers: Vec<RTCIceServer>,
+        outbound: Option<mpsc::Sender<Vec<u8>>>,
+        relay_metrics: Option<Arc<RelayMetrics>>,
+    ) -> Result<Self, BridgeError> {
         let (codec, mut engine) = media_engine()?;
         let registry = register_default_interceptors(Registry::new(), &mut engine)
             .map_err(|_| protocol("WebRTC interceptor setup failed"))?;
@@ -75,15 +103,8 @@ impl MediaPeer {
             relay_metrics,
         });
         let config = RTCConfigurationBuilder::new()
-            .with_ice_servers(vec![RTCIceServer {
-                urls: vec![
-                    "stun:stun.kinesisvideo.us-east-1.amazonaws.com:443".into(),
-                    "stun:stun.l.google.com:19302".into(),
-                ],
-                ..Default::default()
-            }])
+            .with_ice_servers(ice_servers)
             .build();
-        let bind_address = format!("{}:0", routed_local_ip()?);
         let connection = Box::pin(
             PeerConnectionBuilder::new()
                 .with_configuration(config)

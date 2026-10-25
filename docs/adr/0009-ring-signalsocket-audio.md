@@ -52,6 +52,15 @@ reported no remote close code and completed teardown. The preceding five-second
 warm-up negotiated and sent successfully but received no RTP, so it was not
 counted toward the receive gate.
 
+Release 0.18.2 moves to `webrtc`/`rtc` 0.21.1. Its DTLS, SRTP and STUN
+cryptography runs through the `ring` crypto provider, which removes p256 0.13
+and crypto-bigint 0.5.5 (RUSTSEC-2026-0387) from the graph. Codec (PCMU
+payload 0 only), `sendrecv`, `setup:actpass` offers, STUN servers, the
+routed-interface bind address and every timeout are unchanged. In-process
+loopback tests (`src/ring_media_peer_tests.rs`) prove offer/answer, DTLS as
+client and server, trickled candidates and PCMU frames in both directions.
+They do not replace an owned-device call, which gates deployment of 0.18.2.
+
 ## Consequences
 
 - the protocol research gap is closed for audio signaling and transport;

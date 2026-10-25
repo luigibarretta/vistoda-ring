@@ -3,7 +3,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use rtc::media::Sample;
@@ -63,7 +63,7 @@ pub fn spawn(task: SenderTask) {
                 .write_sample(&Sample {
                     data: frame.into(),
                     duration: FRAME_DURATION,
-                    ..Default::default()
+                    ..Sample::new(Instant::now())
                 })
                 .await;
             if result.is_ok() {
