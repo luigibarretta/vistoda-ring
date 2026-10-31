@@ -49,7 +49,13 @@ pub fn describe_push(input: &[u8]) -> String {
         .and_then(Value::as_str)
         .filter(|value| value.len() <= 96 && value.bytes().all(|byte| byte.is_ascii_graphic()))
         .unwrap_or("unknown");
-    let mut keys: Vec<&str> = message.keys().map(String::as_str).take(12).collect();
+    // Field names come from Ring: log only short printable ones.
+    let mut keys: Vec<&str> = message
+        .keys()
+        .map(String::as_str)
+        .filter(|key| key.len() <= 64 && key.bytes().all(|byte| byte.is_ascii_graphic()))
+        .take(12)
+        .collect();
     keys.sort_unstable();
     format!("kind={kind} keys={}", keys.join(","))
 }
@@ -174,5 +180,15 @@ mod tests {
         }
         let other = br#"{"data":{"android_config":"{\"category\":\"com.ring.pn.live-event.motion\"}","data":"{\"device\":{\"id\":42}}"}}"#;
         assert!(parse_push_event(other).is_none());
+    }
+
+    #[test]
+    fn long_or_unprintable_field_names_are_not_logged() {
+        let long = "k".repeat(200);
+        let payload = format!(r#"{{"data":{{"{long}":"1","sp ace":"2","ok":"3"}}}}"#);
+        let shape = super::describe_push(payload.as_bytes());
+        assert!(!shape.contains(&long), "{shape}");
+        assert!(!shape.contains("sp ace"), "{shape}");
+        assert!(shape.contains("ok"), "{shape}");
     }
 }
