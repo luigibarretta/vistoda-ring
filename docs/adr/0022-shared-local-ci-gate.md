@@ -23,11 +23,12 @@ program, while ADR 0001 forbids JavaScript sources.
   the commit in `dependencies/repo-tooling.sha`. CI compares it byte-for-byte
   with a checkout of that commit. It is development tooling: no image, binary
   or Home Assistant app contains it.
-- That vendored directory is the only JavaScript in the repository. The LOC and
-  language test skips it (and the `.ci` scratch checkouts) as it skips
-  `vendor`. Repository-owned checks stay Rust or POSIX shell: the job-ownership
-  check that keeps every manifest step in exactly one CI job is
-  `tests/ci_local_jobs.rs`.
+- That vendored directory is the only JavaScript in the repository. The
+  `source-languages` step and the `loc`/`nasa` built-ins (since repo-tooling
+  0.6.0, `scripts/loc-baseline.json`) skip it (and the `.ci` scratch
+  checkouts) as they skip `vendor`. Repository-owned checks stay Rust or POSIX
+  shell: the job-ownership check that keeps every manifest step in exactly one
+  CI job is `tests/ci_local_jobs.rs`.
 
 ## Consequences
 

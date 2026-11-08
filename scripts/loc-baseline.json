@@ -1,0 +1,22 @@
+{
+  "extends": "fleet-default",
+  "roots": [
+    "."
+  ],
+  "ignore": {
+    "third_party": {
+      "kind": "third_party",
+      "reason": "vendored repo-tooling dist/ (and other upstream copies), byte-verified against their pinned commits"
+    },
+    ".ci": {
+      "kind": "third_party",
+      "optional": true,
+      "reason": "pinned upstream checkouts that CI and ci-local fetch to verify vendored copies"
+    },
+    "vendor": {
+      "kind": "vendored",
+      "reason": "vendored fcm-push-listener fork; its size follows upstream (see vendor/fcm-push-listener-ring/UPSTREAM.md)"
+    }
+  },
+  "allow": {}
+}

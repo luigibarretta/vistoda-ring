@@ -148,8 +148,11 @@ them after the gate.
 The declared MSRV is Rust 1.96, required by the audited WebRTC dependency
 graph and enforced by the production builder image.
 
-Every maintained source or documentation file is limited to 250 lines. Python,
-JavaScript and TypeScript sources are rejected by the repository test suite.
+Source files follow the repo-tooling `fleet-default` LOC preset: 400 physical
+lines per file, no growth, ratchet down (`scripts/loc-baseline.json`), plus
+NASA/JPL-inspired counters that may not rise (`scripts/nasa-baseline.json`).
+Python, JavaScript and TypeScript sources are rejected by the
+`source-languages` gate step.
 The Home Assistant bootstrap is vendored from
 [`lib-vistoda-provider-kit`](https://git.luigibarretta.com/luigibarretta/lib-vistoda-provider-kit)
 at the commit in `dependencies/vistoda-provider-kit.sha` and verified byte-for-byte in CI.

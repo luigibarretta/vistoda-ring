@@ -1,7 +1,13 @@
 # ADR 0006: Maintainability and verification
 
-- Status: accepted
+- Status: accepted; line limit superseded on 2026-11-07
 - Date: 2026-08-14
+
+Update 2026-11-07: the fleet standard (repo-tooling 0.6.0, `fleet-default`
+preset) replaces the 250-line rule and `tests/loc_budget.rs`: one 400-line
+limit for source files (Markdown and configuration are no longer counted),
+zero growth and a ratchet, enforced by the `loc` and `nasa` ci-local steps.
+The Python/JavaScript/TypeScript ban stays, as the `source-languages` step.
 
 ## Context
 
