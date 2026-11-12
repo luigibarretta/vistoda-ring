@@ -3,7 +3,11 @@
 Release notes for the Ring provider. User-facing app notes live in the
 Vistoda Apps catalog (`vistoda_ring/CHANGELOG.md`).
 
-## Unreleased
+## 0.19.0
+
+Deployment still requires the owned-device intercom call test from 0.18.2
+(WebRTC 0.21.1).
+
 
 - `/metrics` requires the bearer like every other route except `/healthz`:
   authentication moved from the handlers to one router-wide middleware from
