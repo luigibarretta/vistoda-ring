@@ -1,3 +1,4 @@
 [allowlist]
-description = "Public RFC 6455 WebSocket handshake fixture"
+description = "Public RFC 6455 WebSocket handshake fixture; lib-auth-modules vendored through lib-vistoda-provider-kit as an exact archive of its pinned commit (check-vendored-dep proves pin and tree digest), whose RFC 6238 TOTP test vector is public"
 regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
+paths = ['''^vendor/auth-modules/''']

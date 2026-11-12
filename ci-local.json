@@ -22,7 +22,7 @@
     },
     {
       "name": "provider-kit",
-      "description": "Vendored bootstrap is byte-identical to lib-vistoda-provider-kit at the pin (dependencies/vendored.json); fetches the pinned commit into .ci/vistoda-provider-kit",
+      "description": "Vendored bootstrap, Rust crate and lib-auth-modules match lib-vistoda-provider-kit at the pin byte-for-byte and by tree digest (dependencies/vendored.json); fetches the pinned commit into .ci/vistoda-provider-kit",
       "uses": "check-vendored-dep",
       "quick": true,
       "timeout_s": 300,

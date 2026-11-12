@@ -29,6 +29,8 @@ paths:
   /metrics:
     get:
       operationId: prometheusMetrics
+      security:
+        - bearerAuth: []
       responses:
         "200":
           description: Aggregate communication lifecycle and latency metrics

@@ -3,6 +3,21 @@
 Release notes for the Ring provider. User-facing app notes live in the
 Vistoda Apps catalog (`vistoda_ring/CHANGELOG.md`).
 
+## Unreleased
+
+- `/metrics` requires the bearer like every other route except `/healthz`:
+  authentication moved from the handlers to one router-wide middleware from
+  the shared lib-vistoda-provider-kit crate (audit R-M1). Unknown routes now
+  also answer 401 without a valid bearer, and authentication runs before
+  request validation.
+- The Ring session and the push registration are sealed at rest
+  (`ring-session.sealed`, `ring-push.sealed`, AES-256-GCM under HKDF sub-keys
+  of a dedicated `store.key`). Existing plaintext files are sealed on first
+  start and removed only after the sealed copy reads back (audit R-M2).
+  Downgrading after this release requires a new enrollment.
+- Private-file and authentication code now comes from the vendored
+  lib-vistoda-provider-kit 0.2.0 crate (with lib-auth-modules v0.2.0).
+
 ## 0.18.2
 
 - WebRTC stack upgrade; requires a live intercom call test before deploy.

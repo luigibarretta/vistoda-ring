@@ -19,6 +19,8 @@ captures, household audio, internal addresses or authentication responses.
 - redact authorization, cookies, refresh tokens, SDP and signed endpoints;
 - keep raw captures outside Git with restrictive permissions and bounded
   retention;
+- treat a backup of the data directory as the Ring account: it holds the
+  sealed session together with its `store.key`;
 - stop immediately on account lockout, throttling or unexpected device action.
 
 ## Door control

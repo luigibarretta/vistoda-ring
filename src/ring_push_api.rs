@@ -3,14 +3,11 @@ use std::{sync::Arc, time::Duration};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::HeaderMap,
     routing::get,
 };
 use serde::Deserialize;
 
-use crate::{
-    api::Runtime, auth::require_bearer, error::BridgeError, ring_push_event::RingPushEventBatch,
-};
+use crate::{api::Runtime, error::BridgeError, ring_push_event::RingPushEventBatch};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,9 +27,7 @@ async fn events(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
     Query(query): Query<EventsQuery>,
-    headers: HeaderMap,
 ) -> Result<Json<RingPushEventBatch>, BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let target = runtime.device(&device)?;
     let device_id = target.expected_id(query.expected_device_id.as_deref())?;
     drop(target);

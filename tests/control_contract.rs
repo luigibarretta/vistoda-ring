@@ -70,7 +70,20 @@ async fn native_status_does_not_disclose_unknown_aliases() {
 
 #[tokio::test]
 async fn prometheus_metrics_are_aggregate_and_have_the_right_content_type() {
+    let anonymous = Request::get("/metrics")
+        .body(Body::empty())
+        .unwrap_or_else(|error| panic!("request failed: {error}"));
+    let response = app()
+        .oneshot(anonymous)
+        .await
+        .unwrap_or_else(|error| panic!("router failed: {error}"));
+    assert_eq!(
+        response.status(),
+        StatusCode::UNAUTHORIZED,
+        "metrics need the bearer"
+    );
     let request = Request::get("/metrics")
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
         .body(Body::empty())
         .unwrap_or_else(|error| panic!("request failed: {error}"));
     let response = app()

@@ -15,7 +15,7 @@
     },
     "vendor": {
       "kind": "vendored",
-      "reason": "vendored fcm-push-listener fork; its size follows upstream (see vendor/fcm-push-listener-ring/UPSTREAM.md)"
+      "reason": "vendored crates: the fcm-push-listener fork (its size follows upstream, see vendor/fcm-push-listener-ring/UPSTREAM.md), and the lib-vistoda-provider-kit crate with the lib-auth-modules archive it uses, byte-verified against the kit pin (dependencies/vendored.json)"
     }
   },
   "allow": {}

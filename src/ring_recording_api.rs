@@ -11,7 +11,6 @@ use axum::{
 
 use crate::{
     api::Runtime,
-    auth::require_bearer,
     error::BridgeError,
     ring_recording::{
         ArchivedRecording, RecordingList, RecordingStorage, RecordingUploadQuery, storage_path,
@@ -40,7 +39,7 @@ async fn upload_recording(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<(StatusCode, Json<crate::ring_recording::RecordingItem>), BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
+    ensure_device(&runtime, &device)?;
     query.validate()?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -60,9 +59,8 @@ async fn upload_recording(
 async fn recordings(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
 ) -> Result<Json<RecordingList>, BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
+    ensure_device(&runtime, &device)?;
     let directory = runtime.device(&device)?.recording_display_dir.clone();
     let kind = runtime.config.recording_storage_kind;
     let recordings = runtime
@@ -90,9 +88,8 @@ async fn recordings(
 async fn media(
     State(runtime): State<Arc<Runtime>>,
     Path((device, recording)): Path<(String, String)>,
-    headers: HeaderMap,
 ) -> Result<impl IntoResponse, BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
+    ensure_device(&runtime, &device)?;
     let id = uuid::Uuid::parse_str(&recording).map_err(|_| BridgeError::RecordingNotFound)?;
     let (content_type, body) = runtime.device(&device)?.recordings.media(id)?;
     Ok(([("content-type", content_type)], body))
@@ -101,21 +98,15 @@ async fn media(
 async fn delete_recording(
     State(runtime): State<Arc<Runtime>>,
     Path((device, recording)): Path<(String, String)>,
-    headers: HeaderMap,
 ) -> Result<StatusCode, BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
+    ensure_device(&runtime, &device)?;
     if let Ok(id) = uuid::Uuid::parse_str(&recording) {
         runtime.device(&device)?.recordings.delete(id)?;
     }
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn authorize_device(
-    runtime: &Runtime,
-    headers: &HeaderMap,
-    device: &str,
-) -> Result<(), BridgeError> {
-    require_bearer(headers, &runtime.config.api_token)?;
+fn ensure_device(runtime: &Runtime, device: &str) -> Result<(), BridgeError> {
     runtime.device(device)?;
     Ok(())
 }

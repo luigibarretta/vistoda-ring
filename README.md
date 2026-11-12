@@ -73,14 +73,18 @@ canary proves the owned event path end to end.
 | `GET /v1/devices/{alias}/recordings` | list private archive metadata | bearer |
 | `GET /v1/devices/{alias}/recordings/{id}` | read one bounded WebM/MP4 | bearer |
 | `DELETE /v1/devices/{alias}/recordings/{id}` | acknowledge and remove, idempotently | bearer |
-| `GET /metrics` | aggregate session counters and latency histograms | none, private network |
+| `GET /metrics` | aggregate session counters and latency histograms | bearer |
 
+Every route except `/healthz` is authenticated by one router-wide middleware
+(lib-vistoda-provider-kit `auth`), so a new handler cannot skip the bearer.
 The container healthcheck uses the bounded public `/healthz` endpoint and does
 not read or expose the API token or Ring session.
 
 Native push needs outbound HTTPS plus TCP/5228 to `mtalk.google.com`. Its
-registration and acknowledged persistent IDs are atomically stored as a 0600
-file. A disconnect reconnects with the stored registration; it is rotated only
+registration and acknowledged persistent IDs are atomically stored sealed
+(`ring-push.sealed`,
+[ADR 0023](docs/adr/0023-sealed-state-and-shared-provider-kit.md)). A
+disconnect reconnects with the stored registration; it is rotated only
 after repeated quick disconnects, make-before-break, keeping the old one if
 the new one fails ([ADR 0021](docs/adr/0021-native-ring-push-events.md)).
 `/healthz` reports only whether the push socket is connected and whether an

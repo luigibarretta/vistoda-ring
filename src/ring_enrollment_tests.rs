@@ -127,11 +127,17 @@ async fn two_step_enrollment_persists_only_the_rotating_session() {
         .unwrap_or_else(|error| panic!("verify failed: {error}"));
     assert_eq!(verified.status, "complete");
     assert_eq!(harness.calls.load(Ordering::SeqCst), 2);
-    let stored = std::fs::read_to_string(harness.directory.path().join("session.json"))
+    let session = harness.directory.path().join("session.json");
+    let stored = crate::ring_session::RingSessionStore::new(session.clone())
+        .load()
+        .unwrap_or_else(|error| panic!("session load failed: {error}"));
+    assert_eq!(stored.refresh_token(), REFRESH);
+    assert!(!session.exists(), "the session is stored sealed only");
+    let sealed = std::fs::read_to_string(session.with_extension("sealed"))
         .unwrap_or_else(|error| panic!("session read failed: {error}"));
-    assert!(stored.contains(REFRESH));
-    assert!(!stored.contains(PASSWORD));
-    assert!(!stored.contains("owner@example.com"));
+    for secret in [REFRESH, PASSWORD, "owner@example.com"] {
+        assert!(!sealed.contains(secret));
+    }
 }
 
 #[tokio::test]

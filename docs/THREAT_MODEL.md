@@ -20,9 +20,9 @@ Assistant buttons and automations may execute the same native unlock directly.
 
 | Threat | Control |
 | --- | --- |
-| Unauthorized listening | Constant-time bearer auth, private bind/firewall and no public route |
+| Unauthorized listening | Constant-time bearer auth on every route but `/healthz` (one router-wide middleware, `/metrics` included), private bind/firewall and no public route |
 | Accidental door action | Exact device binding, panel confirmation, HA authorization and no retry after an ambiguous mutation |
-| Credential disclosure | Ephemeral zeroizing enrollment state, session file only, no payload logs and synthetic fixtures |
+| Credential disclosure | Ephemeral zeroizing enrollment state, no payload logs and synthetic fixtures; refresh token and push registration sealed at rest with AES-256-GCM under a dedicated `store.key` (not the API token). Limit: the key is in the same data directory, so a full copy of it (a backup) still opens them |
 | Account lockout | One active flow, start cooldown, single-use MFA and no retry of rejected requests or 429 |
 | Vendor throttling | One call per alias, ten-second post-call cooldown, explicit user start and no rejected-request retry |
 | Endless live call | 120-second deadline, disconnect cancellation and server-side teardown |

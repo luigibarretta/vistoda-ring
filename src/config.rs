@@ -1,5 +1,7 @@
 use std::{collections::BTreeMap, env, net::SocketAddr, path::PathBuf};
 
+use vistoda_provider_kit::auth::ApiToken;
+
 use crate::{
     error::BridgeError,
     model::{DeviceConfig, DeviceKind},
@@ -10,7 +12,7 @@ use crate::{
 pub struct BridgeConfig {
     pub bind_host: String,
     pub bind_port: u16,
-    pub api_token: Vec<u8>,
+    pub api_token: ApiToken,
     pub devices: BTreeMap<String, DeviceConfig>,
     pub session_file: PathBuf,
     pub push_file: PathBuf,
@@ -55,12 +57,9 @@ impl BridgeConfig {
         api_token: Vec<u8>,
         devices: BTreeMap<String, DeviceConfig>,
     ) -> Result<Self, BridgeError> {
-        let api_token = trim_ascii(api_token);
-        if api_token.len() < 32 {
-            return Err(BridgeError::Configuration(
-                "API token must contain at least 32 bytes".into(),
-            ));
-        }
+        let api_token = ApiToken::new(trim_ascii(api_token)).map_err(|_| {
+            BridgeError::Configuration("API token must contain at least 32 bytes".into())
+        })?;
         validate_devices(&devices)?;
         Ok(Self {
             bind_host,

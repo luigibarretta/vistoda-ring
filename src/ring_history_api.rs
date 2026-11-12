@@ -3,14 +3,11 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::HeaderMap,
     routing::get,
 };
 use serde::Deserialize;
 
-use crate::{
-    api::Runtime, auth::require_bearer, error::BridgeError, ring_history::RingHistoryPage,
-};
+use crate::{api::Runtime, error::BridgeError, ring_history::RingHistoryPage};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,9 +28,7 @@ async fn history(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
     Query(query): Query<HistoryQuery>,
-    headers: HeaderMap,
 ) -> Result<Json<RingHistoryPage>, BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let target = runtime.device(&device)?;
     let expected = target
         .expected_id(query.expected_device_id.as_deref())?
@@ -52,9 +47,7 @@ async fn history(
 async fn activity_probe(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
 ) -> Result<Json<Vec<crate::ring_client::ProbeSummary>>, BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let target = runtime.device(&device)?;
     let summaries = target.provider.client().await?.activity_probe().await?;
     drop(target);

@@ -1,5 +1,4 @@
 pub mod api;
-pub mod auth;
 pub mod config;
 pub mod error;
 mod http_observability;
@@ -63,6 +62,7 @@ mod ring_relay_metrics;
 mod ring_relay_protocol;
 mod ring_relay_worker;
 mod ring_runtime_inventory;
+mod ring_sealed;
 pub mod ring_session;
 mod ring_session_gate;
 mod ring_session_reason;

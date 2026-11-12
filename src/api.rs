@@ -3,14 +3,15 @@ use std::sync::{Arc, RwLock};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     middleware,
+    response::IntoResponse,
     routing::{delete, get, post},
 };
 use serde::{Deserialize, Serialize};
+use vistoda_provider_kit::auth::{AuthPolicy, require_auth};
 
 use crate::{
-    auth::require_bearer,
     config::BridgeConfig,
     error::BridgeError,
     model::{DeviceSummary, MediaCapabilities},
@@ -98,7 +99,11 @@ struct DeviceList {
     devices: Vec<DeviceSummary>,
 }
 
+/// Every route except `/healthz` (including `/metrics`) needs the bearer:
+/// one router-wide layer, so a new handler cannot skip authentication.
 pub fn router(runtime: Arc<Runtime>) -> Router {
+    let auth = AuthPolicy::new(runtime.config.api_token.clone())
+        .rejection(|| BridgeError::Unauthorized.into_response());
     Router::new()
         .route("/healthz", get(health))
         .route("/metrics", get(prometheus_metrics))
@@ -125,6 +130,7 @@ pub fn router(runtime: Arc<Runtime>) -> Router {
         .merge(crate::ring_relay_api::routes())
         .merge(crate::ring_recording_api::routes())
         .fallback(|| async { StatusCode::NOT_FOUND })
+        .layer(middleware::from_fn_with_state(Arc::new(auth), require_auth))
         .layer(middleware::from_fn(
             crate::http_observability::observe_request,
         ))
@@ -158,11 +164,7 @@ async fn prometheus_metrics(
     )
 }
 
-async fn devices(
-    State(runtime): State<Arc<Runtime>>,
-    headers: HeaderMap,
-) -> Result<Json<DeviceList>, BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
+async fn devices(State(runtime): State<Arc<Runtime>>) -> Result<Json<DeviceList>, BridgeError> {
     let devices = runtime.device_summaries()?;
     Ok(Json(DeviceList { devices }))
 }
@@ -170,9 +172,7 @@ async fn devices(
 async fn capabilities(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
 ) -> Result<Json<MediaCapabilities>, BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
     runtime.device(&device)?;
     Ok(Json(MediaCapabilities::verified_audio_recordings()))
 }
@@ -180,10 +180,8 @@ async fn capabilities(
 async fn start_audio_session(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
     Json(mut input): Json<AudioSessionRequest>,
 ) -> Result<(StatusCode, Json<AudioSessionCreated>), BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let (target, physical) = runtime.audio_target(&device, input.expected_device_id.as_deref())?;
     input.expected_device_id = Some(physical.to_string());
     let session = target.audio.start(physical.to_string(), input).await?;
@@ -195,9 +193,7 @@ async fn delete_audio_session(
     State(runtime): State<Arc<Runtime>>,
     Path((device, session)): Path<(String, String)>,
     Query(query): Query<DeleteAudioQuery>,
-    headers: HeaderMap,
 ) -> Result<StatusCode, BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let (target, _) = runtime.audio_target(&device, query.expected_device_id.as_deref())?;
     let reason = query.reason.unwrap_or(SessionEndReason::UserStop);
     if !reason.is_client() {

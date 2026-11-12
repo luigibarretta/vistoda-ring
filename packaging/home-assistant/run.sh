@@ -54,6 +54,11 @@ chown -R bridge:bridge "${recording_dir}"
 chmod 0700 "${recording_dir}"
 vistoda_secure_file bridge:bridge "${data_dir}/ring-session.json"
 vistoda_secure_file bridge:bridge "${data_dir}/ring-push.json"
+# The two .json files are the plaintext state of earlier releases; the bridge
+# seals them into .sealed files (key: store.key) on first start and removes them.
+vistoda_secure_file bridge:bridge "${data_dir}/ring-session.sealed"
+vistoda_secure_file bridge:bridge "${data_dir}/ring-push.sealed"
+vistoda_secure_file bridge:bridge "${data_dir}/store.key"
 chmod 0600 "${devices_file}"
 storage_marker_value "${storage_choice}" "${network_mount}" >"${storage_marker}.new"
 chmod 0600 "${storage_marker}.new"

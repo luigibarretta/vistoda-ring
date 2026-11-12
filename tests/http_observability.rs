@@ -124,6 +124,7 @@ async fn unmatched_routes_receive_server_correlation_ids() {
         .oneshot(
             Request::get("/not-a-real-route?value=private")
                 .header("x-request-id", CLIENT_ID)
+                .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
                 .body(Body::empty())
                 .unwrap_or_else(|error| panic!("request failed: {error}")),
         )

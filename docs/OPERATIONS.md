@@ -16,7 +16,8 @@ Calls remain on demand, authenticated, device-scoped and limited to 120 seconds.
 | `RING_INTERCOM_BIND_PORT` | `8775` | listener port |
 | `RING_INTERCOM_API_TOKEN_FILE` | `/run/secrets/api_token` | bearer token file, at least 32 bytes |
 | `RING_INTERCOM_DEVICES_FILE` | `/config/devices.json` | bootstrap aliases or explicit physical bindings |
-| `RING_INTERCOM_SESSION_FILE` | `/data/ring-session.json` | dedicated rotating session |
+| `RING_INTERCOM_SESSION_FILE` | `/data/ring-session.json` | dedicated rotating session (stored sealed as `ring-session.sealed`) |
+| `RING_INTERCOM_PUSH_FILE` | `/data/ring-push.json` | FCM push registration (stored sealed as `ring-push.sealed`) |
 | `RING_INTERCOM_RECORDING_DIR` | `/data/recordings` | private bounded call archive |
 | `RING_INTERCOM_RECORDING_DISPLAY_DIR` | `/data/recordings` | user-facing absolute archive path |
 | `RING_INTERCOM_RECORDING_STORAGE_KIND` | `private` | `private`, `addon_config`, `media`, `share` or `custom` |
@@ -33,6 +34,10 @@ a stable UUID `hardware_id` and one refresh token. Unknown keys, including a
 password, are rejected. On Unix the file must be regular, must not be a symlink
 and must have no group or other permissions (normally mode `0600`). Reads are
 limited to 16 KiB and secret buffers are zeroed when dropped.
+
+Session and push registration are stored sealed (`*.sealed` and `store.key`,
+all `0600`); older plaintext files are sealed and removed on first use. Restore
+the three files together ([ADR 0023](adr/0023-sealed-state-and-shared-provider-kit.md)).
 
 The same bounded client supplies on-demand HTTP audio sessions. Its explicit
 `research-discover` command refreshes the dedicated session, registers it,

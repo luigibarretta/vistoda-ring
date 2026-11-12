@@ -4,13 +4,12 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     routing::{get, patch, post},
 };
 
 use crate::{
     api::Runtime,
-    auth::require_bearer,
     error::BridgeError,
     ring_control::{RingDeviceStatus, VolumeUpdate},
 };
@@ -25,9 +24,8 @@ pub fn routes() -> Router<Arc<Runtime>> {
 async fn device_status(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
 ) -> Result<Json<RingDeviceStatus>, BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
+    ensure_device(&runtime, &device)?;
     Ok(Json(
         runtime
             .device(&device)?
@@ -42,10 +40,9 @@ async fn device_status(
 async fn unlock_door(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
     body: Bytes,
 ) -> Result<StatusCode, BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
+    ensure_device(&runtime, &device)?;
     if body.len() > 256 {
         return Err(BridgeError::InvalidRequest("unlock body too large".into()));
     }
@@ -74,10 +71,9 @@ async fn unlock_door(
 async fn update_settings(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
     Json(mut update): Json<VolumeUpdate>,
 ) -> Result<StatusCode, BridgeError> {
-    authorize_device(&runtime, &headers, &device)?;
+    ensure_device(&runtime, &device)?;
     let target = runtime.device(&device)?;
     update.expected_device_id = Some(
         target
@@ -100,12 +96,7 @@ struct UnlockRequest {
     expected_device_id: Option<String>,
 }
 
-fn authorize_device(
-    runtime: &Runtime,
-    headers: &HeaderMap,
-    device: &str,
-) -> Result<(), BridgeError> {
-    require_bearer(headers, &runtime.config.api_token)?;
+fn ensure_device(runtime: &Runtime, device: &str) -> Result<(), BridgeError> {
     runtime.device(device)?;
     Ok(())
 }

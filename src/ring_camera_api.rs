@@ -1,7 +1,6 @@
 //! Exact camera-ID routes never materialize Intercom unlock/audio aliases.
 use crate::{
     BridgeError, Runtime,
-    auth::require_bearer,
     ring_audio::{AudioSessionCreated, AudioSessionRequest, SessionEndReason},
     ring_audio_manager::RingAudioSessions,
     ring_audio_worker::ProductionSessionRunner,
@@ -10,7 +9,7 @@ use crate::{
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{StatusCode, header},
     routing::{delete, get, post},
 };
 use serde::Deserialize;
@@ -28,7 +27,6 @@ pub fn routes() -> Router<Arc<Runtime>> {
 
 async fn cameras(
     State(runtime): State<Arc<Runtime>>,
-    headers: HeaderMap,
 ) -> Result<
     (
         [(header::HeaderName, &'static str); 1],
@@ -36,7 +34,6 @@ async fn cameras(
     ),
     BridgeError,
 > {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let client = runtime
         .provider
         .client()
@@ -61,7 +58,6 @@ fn exact_id(path: &str, expected: Option<&str>) -> Result<u64, BridgeError> {
 async fn start(
     State(runtime): State<Arc<Runtime>>,
     Path(device): Path<String>,
-    headers: HeaderMap,
     Json(input): Json<AudioSessionRequest>,
 ) -> Result<
     (
@@ -71,7 +67,6 @@ async fn start(
     ),
     BridgeError,
 > {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let id = exact_id(&device, input.expected_device_id.as_deref())?;
     crate::ring_video::validate_request(&input)?;
     let inventory = runtime.provider.client().await?.camera_inventory().await?;
@@ -117,9 +112,7 @@ async fn stop(
     State(runtime): State<Arc<Runtime>>,
     Path((device, session)): Path<(String, String)>,
     Query(query): Query<StopQuery>,
-    headers: HeaderMap,
 ) -> Result<StatusCode, BridgeError> {
-    require_bearer(&headers, &runtime.config.api_token)?;
     let id = exact_id(&device, Some(&query.expected_device_id))?;
     let reason = query.reason.unwrap_or(SessionEndReason::UserStop);
     if !reason.is_client() {

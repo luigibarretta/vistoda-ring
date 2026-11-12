@@ -140,15 +140,23 @@ async fn volume_settings(
     Json(json!({})).into_response()
 }
 
+/// The session at `path` is stored sealed (never as plaintext) and holds
+/// `expected` as its refresh token.
 pub fn assert_session_token(path: &std::path::Path, expected: &str) {
-    let value: Value = serde_json::from_slice(
-        &fs::read(path).unwrap_or_else(|error| panic!("session read failed: {error}")),
-    )
-    .unwrap_or_else(|error| panic!("session JSON failed: {error}"));
-    assert_eq!(value["refresh_token"], expected);
+    let session = crate::ring_session::RingSessionStore::new(path.to_path_buf())
+        .load()
+        .unwrap_or_else(|error| panic!("session load failed: {error}"));
+    assert_eq!(session.refresh_token(), expected);
+    assert!(!path.exists(), "the plaintext session must be gone");
+    let sealed = path.with_extension("sealed");
+    let raw = fs::read(&sealed).unwrap_or_else(|error| panic!("session read failed: {error}"));
+    assert!(
+        !raw.windows(expected.len())
+            .any(|window| window == expected.as_bytes())
+    );
     #[cfg(unix)]
     assert_eq!(
-        fs::metadata(path)
+        fs::metadata(&sealed)
             .unwrap_or_else(|error| panic!("session metadata failed: {error}"))
             .permissions()
             .mode()

@@ -1,17 +1,17 @@
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{Read, Take, Write},
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use fcm_push_listener::Registration;
 use serde::{Deserialize, Serialize};
-#[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use uuid::Uuid;
+use vistoda_provider_kit::{
+    private_file,
+    sealed_store::{SealError, SealedFile},
+};
 use zeroize::Zeroizing;
 
-use crate::error::BridgeError;
+use crate::{
+    error::BridgeError,
+    ring_sealed::{PUSH_LABEL, sealed_error, sealed_file},
+};
 
 const MAX_PUSH_BYTES: usize = 64 * 1024;
 const MAX_PERSISTENT_IDS: usize = 100;
@@ -59,27 +59,34 @@ impl RingPushState {
     }
 }
 
+/// The FCM registration, sealed next to the configured plaintext path
+/// (`ring_sealed`).
 pub struct RingPushStore {
-    path: PathBuf,
+    file: SealedFile,
 }
 
 impl RingPushStore {
-    pub const fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            file: sealed_file(path, PUSH_LABEL, MAX_PUSH_BYTES),
+        }
     }
 
-    /// Permission and I/O problems stay fail-closed; only unparsable or
-    /// invalid content is quarantined.
+    /// Permission and I/O problems stay fail-closed; content that does not
+    /// open (a lost or replaced `store.key`, a damaged envelope) or does not
+    /// parse is quarantined: a registration can always be created again.
     pub fn load(&self) -> Result<StoredPush, BridgeError> {
-        let file = match open_restricted(&self.path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(StoredPush::Absent);
-            }
-            Err(error) => return Err(error.into()),
+        let bytes = match self.file.load() {
+            Ok(Some(bytes)) => Some(bytes),
+            Ok(None) => return Ok(StoredPush::Absent),
+            Err(
+                SealError::Authentication | SealError::Encoding | SealError::UnsupportedVersion(_),
+            ) => None,
+            Err(SealError::File(error)) if error.is_not_found() => None,
+            Err(error) => return Err(sealed_error(error)),
         };
-        validate_permissions(&file)?;
-        let document = read_bounded(file)?
+        let document = bytes
+            .filter(|bytes| bytes.len() <= MAX_PUSH_BYTES)
             .and_then(|bytes| serde_json::from_slice::<PushDocument>(&bytes).ok())
             .filter(valid_document);
         let Some(document) = document else {
@@ -92,22 +99,25 @@ impl RingPushStore {
         }))
     }
 
+    /// The sealed registration file.
+    pub fn sealed_path(&self) -> &Path {
+        self.file.path()
+    }
+
     /// Path of the single quarantine slot; a newer corrupt file replaces it.
     pub fn quarantine_path(&self) -> PathBuf {
-        let mut name = self.path.file_name().unwrap_or_default().to_owned();
+        let mut name = self
+            .sealed_path()
+            .file_name()
+            .unwrap_or_default()
+            .to_owned();
         name.push(".corrupt");
-        self.path.with_file_name(name)
+        self.sealed_path().with_file_name(name)
     }
 
     fn quarantine(&self) -> Result<(), BridgeError> {
-        fs::rename(&self.path, self.quarantine_path())?;
-        if let Some(parent) = self
-            .path
-            .parent()
-            .filter(|path| !path.as_os_str().is_empty())
-        {
-            File::open(parent)?.sync_all()?;
-        }
+        private_file::rename(self.sealed_path(), &self.quarantine_path())
+            .map_err(|error| sealed_error(SealError::File(error)))?;
         tracing::warn!(
             "Ring push registration file was unreadable; moved it aside and registering again"
         );
@@ -115,57 +125,17 @@ impl RingPushStore {
     }
 
     pub fn persist(&self, state: &RingPushState) -> Result<(), BridgeError> {
-        let parent = self
-            .path
-            .parent()
-            .filter(|value| !value.as_os_str().is_empty())
-            .ok_or_else(|| configuration("push state path must have a parent"))?;
-        let name = self
-            .path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| configuration("push state filename is invalid"))?;
-        let temporary = parent.join(format!(".{name}.{}.tmp", Uuid::new_v4()));
-        let result = write_and_replace(&self.path, parent, &temporary, state);
-        if result.is_err() {
-            let _ignored = fs::remove_file(temporary);
+        let document = PushDocument {
+            schema_version: 1,
+            registration: state.registration.clone(),
+            persistent_ids: state.persistent_ids.clone(),
+        };
+        let bytes = Zeroizing::new(serde_json::to_vec(&document)?);
+        if bytes.len() > MAX_PUSH_BYTES {
+            return Err(configuration("push state exceeds 64 KiB"));
         }
-        result
+        self.file.save(&bytes).map_err(sealed_error)
     }
-}
-
-fn write_and_replace(
-    target: &Path,
-    parent: &Path,
-    temporary: &Path,
-    state: &RingPushState,
-) -> Result<(), BridgeError> {
-    let document = PushDocument {
-        schema_version: 1,
-        registration: state.registration.clone(),
-        persistent_ids: state.persistent_ids.clone(),
-    };
-    let bytes = Zeroizing::new(serde_json::to_vec(&document)?);
-    if bytes.len() > MAX_PUSH_BYTES {
-        return Err(configuration("push state exceeds 64 KiB"));
-    }
-    let mut file = create_private(temporary)?;
-    file.write_all(&bytes)?;
-    file.sync_all()?;
-    drop(file);
-    fs::rename(temporary, target)?;
-    File::open(parent)?.sync_all()?;
-    Ok(())
-}
-
-/// `None` when the document exceeds the size bound.
-fn read_bounded(file: File) -> Result<Option<Zeroizing<Vec<u8>>>, BridgeError> {
-    let mut bytes = Zeroizing::new(Vec::with_capacity(4 * 1024));
-    let limit = u64::try_from(MAX_PUSH_BYTES + 1)
-        .map_err(|_| configuration("push state size limit is invalid"))?;
-    let mut reader: Take<File> = file.take(limit);
-    reader.read_to_end(&mut bytes)?;
-    Ok((bytes.len() <= MAX_PUSH_BYTES).then_some(bytes))
 }
 
 fn valid_document(document: &PushDocument) -> bool {
@@ -178,39 +148,6 @@ fn valid_document(document: &PushDocument) -> bool {
             .persistent_ids
             .iter()
             .all(|value| !value.is_empty() && value.len() <= 512 && value.is_ascii())
-}
-
-fn open_restricted(path: &Path) -> Result<File, std::io::Error> {
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
-    options.open(path)
-}
-
-fn create_private(path: &Path) -> Result<File, BridgeError> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    options.mode(0o600).custom_flags(libc::O_CLOEXEC);
-    Ok(options.open(path)?)
-}
-
-#[cfg(unix)]
-fn validate_permissions(file: &File) -> Result<(), BridgeError> {
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
-        return Err(configuration("push state permissions are unsafe"));
-    }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn validate_permissions(file: &File) -> Result<(), BridgeError> {
-    if !file.metadata()?.is_file() {
-        return Err(configuration("push state must be a regular file"));
-    }
-    Ok(())
 }
 
 fn configuration(message: &str) -> BridgeError {

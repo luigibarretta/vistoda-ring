@@ -42,6 +42,10 @@ fn home_assistant_app_is_private_discovered_and_multiarch() {
     assert!(runner.contains("/addon_configs/${app_slug}/recordings"));
     assert!(runner.contains("vistoda_prepare_data_dir bridge:bridge \"${data_dir}\""));
     assert!(runner.contains("vistoda_secure_file bridge:bridge \"${data_dir}/ring-session.json\""));
+    for sealed in ["ring-session.sealed", "ring-push.sealed", "store.key"] {
+        let line = format!("vistoda_secure_file bridge:bridge \"${{data_dir}}/{sealed}\"");
+        assert!(runner.contains(&line), "{line}");
+    }
     assert!(!runner.contains("8775:8775"));
     assert!(workflow.contains("[\"amd64\", \"aarch64\"]"));
     assert!(workflow.contains("home-assistant/builder/actions/build-image"));

@@ -175,7 +175,7 @@ async fn a_failed_rotation_keeps_and_uses_the_old_registration() {
 async fn a_missing_or_corrupt_registration_is_replaced_and_reported() {
     let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
     let path = directory.path().join("push.json");
-    let store = Arc::new(RingPushStore::new(path.clone()));
+    let store = Arc::new(RingPushStore::new(path));
     let registrar = FakeRegistrar::new(&store);
     let metrics = RingPushMetrics::default();
     let mut rotate = false;
@@ -184,7 +184,8 @@ async fn a_missing_or_corrupt_registration_is_replaced_and_reported() {
         "b".repeat(64)
     );
     assert!(!metrics.state_was_reset());
-    std::fs::write(&path, b"{truncated").unwrap_or_else(|error| panic!("write: {error}"));
+    std::fs::write(store.sealed_path(), b"{truncated")
+        .unwrap_or_else(|error| panic!("write: {error}"));
     assert_eq!(
         run(&store, &registrar, &metrics, &mut rotate).await,
         "c".repeat(64)

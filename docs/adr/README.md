@@ -24,6 +24,7 @@
 | [0020](0020-haos-network-recording-storage.md) | Fail-closed HAOS network recording storage |
 | [0021](0021-native-ring-push-events.md) | Native Ring push events with bounded fallback |
 | [0022](0022-shared-local-ci-gate.md) | Shared local CI gate |
+| [0023](0023-sealed-state-and-shared-provider-kit.md) | Sealed Ring state and shared provider kit crate |
 
 ADRs are immutable after acceptance. Superseding decisions receive a new ADR
 that links to the earlier one.

@@ -15,7 +15,6 @@ use tokio::sync::{mpsc, oneshot};
 use crate::{
     BridgeError,
     api::Runtime,
-    auth::require_bearer,
     ring_audio::SessionEndReason,
     ring_audio_manager::RelayReservation,
     ring_relay_protocol::{
@@ -48,7 +47,6 @@ async fn upgrade_relay(
     request: Request,
 ) -> Result<Response, BridgeError> {
     let (mut parts, _body) = request.into_parts();
-    require_bearer(&parts.headers, &runtime.config.api_token)?;
     let (target, physical) = runtime.audio_target(&device, query.expected_device_id.as_deref())?;
     let expected = physical.to_string();
     let websocket = match WebSocketUpgrade::from_request_parts(&mut parts, &runtime).await {
