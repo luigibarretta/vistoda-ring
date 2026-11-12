@@ -148,6 +148,7 @@ async fn healthcheck() -> Result<(), Box<dyn std::error::Error>> {
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     let config = BridgeConfig::from_env().await?;
     let address = config.socket_address()?;
+    ring_intercom_bridge::migrate_sealed_state(&config).await?;
     let runtime = Arc::new(Runtime::new(config)?);
     let listener = TcpListener::bind(address).await?;
     runtime.start_background();

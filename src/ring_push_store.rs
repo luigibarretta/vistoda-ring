@@ -1,9 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use fcm_push_listener::Registration;
 use serde::{Deserialize, Serialize};
 use vistoda_provider_kit::{
-    private_file,
+    private_file::{self, FileError, PrivateFileError},
     sealed_store::{SealError, SealedFile},
 };
 use zeroize::Zeroizing;
@@ -63,26 +66,35 @@ impl RingPushState {
 /// (`ring_sealed`).
 pub struct RingPushStore {
     file: SealedFile,
+    /// The plaintext file of earlier releases, migrated on load.
+    legacy: PathBuf,
 }
 
 impl RingPushStore {
     pub fn new(path: PathBuf) -> Self {
         Self {
-            file: sealed_file(path, PUSH_LABEL, MAX_PUSH_BYTES),
+            file: sealed_file(path.clone(), PUSH_LABEL, MAX_PUSH_BYTES),
+            legacy: path,
         }
     }
 
-    /// Permission and I/O problems stay fail-closed; content that does not
-    /// open (a lost or replaced `store.key`, a damaged envelope) or does not
-    /// parse is quarantined: a registration can always be created again.
+    /// Permission and I/O problems stay fail-closed; content that is empty,
+    /// oversized, does not open (lost or replaced `store.key`, damaged
+    /// envelope) or does not parse is quarantined: a registration can always
+    /// be created again.
     pub fn load(&self) -> Result<StoredPush, BridgeError> {
         let bytes = match self.file.load() {
             Ok(Some(bytes)) => Some(bytes),
             Ok(None) => return Ok(StoredPush::Absent),
             Err(
-                SealError::Authentication | SealError::Encoding | SealError::UnsupportedVersion(_),
+                SealError::Authentication
+                | SealError::Encoding
+                | SealError::UnsupportedVersion(_)
+                | SealError::MissingKey(_)
+                | SealError::File(FileError::Private(
+                    PrivateFileError::Empty | PrivateFileError::TooLarge { .. },
+                )),
             ) => None,
-            Err(SealError::File(error)) if error.is_not_found() => None,
             Err(error) => return Err(sealed_error(error)),
         };
         let document = bytes
@@ -115,8 +127,15 @@ impl RingPushStore {
         self.sealed_path().with_file_name(name)
     }
 
+    /// Moves the offending file aside: a plaintext file that is still there
+    /// failed migration, otherwise the sealed file is at fault.
     fn quarantine(&self) -> Result<(), BridgeError> {
-        private_file::rename(self.sealed_path(), &self.quarantine_path())
+        let source = if fs::symlink_metadata(&self.legacy).is_ok() {
+            self.legacy.as_path()
+        } else {
+            self.sealed_path()
+        };
+        private_file::rename(source, &self.quarantine_path())
             .map_err(|error| sealed_error(SealError::File(error)))?;
         tracing::warn!(
             "Ring push registration file was unreadable; moved it aside and registering again"

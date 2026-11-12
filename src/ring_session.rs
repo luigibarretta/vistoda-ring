@@ -107,6 +107,11 @@ impl RingSessionStore {
         RingSession::parse(&bytes)
     }
 
+    /// Seals a plaintext session left by an earlier release (`ring_sealed`).
+    pub fn migrate(&self) -> Result<(), BridgeError> {
+        self.file.migrate().map(drop).map_err(sealed_error)
+    }
+
     pub(crate) fn persist(&self, session: &RingSession) -> Result<(), BridgeError> {
         let document = SessionDocumentRef {
             schema_version: 1,

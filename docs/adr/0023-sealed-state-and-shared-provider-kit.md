@@ -28,12 +28,15 @@ archive it uses, at the kit pin and verified by `check-vendored-dep`.
   ciphertext}`, AES-256-GCM, keys = HKDF sub-keys `vistoda-ring/session/v1`
   and `vistoda-ring/push/v1` of the 32 random bytes in `store.key` (mode
   `0600`, created once and never replaced).
-- A plaintext file from an earlier release is sealed on first use, read back
-  and only then removed. A plaintext file with unsafe permissions is kept and
-  reported, so an enrolled session is never lost.
-- A push registration that no longer opens (lost key, damaged envelope) is
-  quarantined like unparsable content and registered again; a session that
-  no longer opens fails closed and needs a new enrollment.
+- `serve` seals a plaintext file from an earlier release at startup (research
+  commands on first use), reads it back and only then removes it. A
+  plaintext file wins over an existing sealed one (it is newer after a
+  downgrade). One with unsafe permissions is kept and stops startup, so an
+  enrolled session is never lost.
+- A push registration that is empty, oversized or no longer opens (lost key,
+  damaged envelope) is quarantined like unparsable content and registered
+  again. A session that no longer opens, or whose `store.key` is missing,
+  fails closed with a configuration error and never reads as "not enrolled".
 
 ## Consequences
 

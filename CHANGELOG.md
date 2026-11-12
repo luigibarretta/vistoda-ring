@@ -12,8 +12,10 @@ Vistoda Apps catalog (`vistoda_ring/CHANGELOG.md`).
   request validation.
 - The Ring session and the push registration are sealed at rest
   (`ring-session.sealed`, `ring-push.sealed`, AES-256-GCM under HKDF sub-keys
-  of a dedicated `store.key`). Existing plaintext files are sealed on first
-  start and removed only after the sealed copy reads back (audit R-M2).
+  of a dedicated `store.key`). `serve` seals existing plaintext files at
+  startup and removes them only after the sealed copy reads back; a
+  plaintext file wins over an older sealed copy (audit R-M2). A missing
+  `store.key` fails closed instead of reading as "not enrolled".
   Downgrading after this release requires a new enrollment.
 - Private-file and authentication code now comes from the vendored
   lib-vistoda-provider-kit 0.2.0 crate (with lib-auth-modules v0.2.0).

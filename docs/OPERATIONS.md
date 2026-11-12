@@ -33,17 +33,15 @@ The research library accepts a separate JSON document with schema version 1,
 a stable UUID `hardware_id` and one refresh token. Unknown keys, including a
 password, are rejected. On Unix the file must be regular, must not be a symlink
 and must have no group or other permissions (normally mode `0600`). Reads are
-limited to 16 KiB and secret buffers are zeroed when dropped.
-
-Session and push registration are stored sealed (`*.sealed` and `store.key`,
-all `0600`); older plaintext files are sealed and removed on first use. Restore
-the three files together ([ADR 0023](adr/0023-sealed-state-and-shared-provider-kit.md)).
+limited to 16 KiB and secret buffers are zeroed when dropped. Session and push
+registration are stored sealed (`*.sealed` and `store.key`, all `0600`); older
+plaintext files are sealed and removed when `serve` starts. Restore the three
+files together ([ADR 0023](adr/0023-sealed-state-and-shared-provider-kit.md)).
 
 The same bounded client supplies on-demand HTTP audio sessions. Its explicit
 `research-discover` command refreshes the dedicated session, registers it,
-reads `ring_devices` once and creates a new synthetic fixture containing only
-the Intercom Audio count and synthetic identities. It refuses to overwrite an
-existing output.
+reads `ring_devices` once and writes a new synthetic fixture with only the
+Intercom Audio count and synthetic identities, never overwriting an output.
 
 ```bash
 ring-intercom-bridge research-discover \
@@ -58,9 +56,11 @@ Assistant `.storage`.
 ## Audio canary
 
 `research-audio-canary` uses the enrolled session and exact discovered
-Intercom. It requests one signaling ticket and runs one PCMU `sendrecv` WebRTC
-call for 5–30 seconds. The return track is silence, not a microphone. Output is
-semantic JSON only; SDP, ICE, tickets and identifiers are never printed.
+Intercom: one signaling ticket, one PCMU `sendrecv` WebRTC call for 5–30
+seconds, silence as the return track. Output is semantic JSON only; SDP, ICE,
+tickets and identifiers are never printed. A plaintext `--session-file` is
+sealed in place (`ring-session.sealed` plus `store.key` beside it, plaintext
+removed).
 
 ```bash
 RUST_LOG=ring_intercom_bridge=error,webrtc=off,rtc=off \

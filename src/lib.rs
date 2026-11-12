@@ -77,3 +77,4 @@ mod ring_wire;
 pub use api::{Runtime, router};
 pub use config::BridgeConfig;
 pub use error::BridgeError;
+pub use ring_sealed::migrate_sealed_state;
